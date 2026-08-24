@@ -77,6 +77,82 @@ async def test_success_status_posts_omnia_terminal_event(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_success_uses_run_scoped_omnia_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    stale = _omnia_metadata()
+    stale["source_context"]["omnia_thread"] |= {
+        "event_id": "event-old",
+        "journal_run_id": "journal-old",
+    }
+    client = _FakeClient(stale)
+    monkeypatch.setattr(completion, "langgraph_client", lambda: client)
+    reply = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(completion, "post_omnia_dm_event", reply)
+
+    result = await completion.handle_run_completion(
+        {
+            "thread_id": "t1",
+            "run_id": "run-2",
+            "status": "success",
+            "metadata": {
+                "source": "omnia",
+                "source_context": {
+                    "omnia_thread": {
+                        "thread_id": "dm-kyle-luna",
+                        "event_id": "event-current",
+                        "journal_run_id": "journal-current",
+                    }
+                },
+            },
+        }
+    )
+
+    assert result == {"status": "ok", "reason": "Omnia completion posted"}
+    await_args = reply.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
+    assert payload["event_id"] == "event-current"
+    assert payload["journal_run_id"] == "journal-current"
+
+
+@pytest.mark.asyncio
+async def test_failure_uses_run_scoped_omnia_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    stale = _omnia_metadata()
+    stale["source_context"]["omnia_thread"] |= {
+        "event_id": "event-old",
+        "journal_run_id": "journal-old",
+    }
+    client = _FakeClient(stale)
+    monkeypatch.setattr(completion, "langgraph_client", lambda: client)
+    reply = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(completion, "post_omnia_dm_event", reply)
+
+    result = await completion.handle_run_completion(
+        {
+            "thread_id": "t1",
+            "run_id": "run-2",
+            "status": "error",
+            "metadata": {
+                "source": "omnia",
+                "source_context": {
+                    "omnia_thread": {
+                        "thread_id": "dm-kyle-luna",
+                        "event_id": "event-current",
+                        "journal_run_id": "journal-current",
+                    }
+                },
+            },
+        }
+    )
+
+    assert result["status"] == "ok"
+    await_args = reply.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
+    assert payload["event_id"] == "event-current"
+    assert payload["journal_run_id"] == "journal-current"
+
+
+@pytest.mark.asyncio
 async def test_error_status_posts_slack_failure_reply(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _FakeClient(_slack_metadata())
     monkeypatch.setattr(completion, "langgraph_client", lambda: client)

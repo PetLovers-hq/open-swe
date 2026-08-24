@@ -1,5 +1,6 @@
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -43,6 +44,37 @@ def test_leave_failure_comment_posts_generic_token_free_slack_notice(
     assert thread_called["thread_ts"] == "1.2"
     assert "secret-token" not in thread_called["message"]
     assert "https://app.example.com/my-settings" in thread_called["message"]
+
+
+def test_leave_failure_comment_posts_generic_omnia_notice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reply = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(auth, "post_omnia_dm_event", reply)
+    monkeypatch.setattr(
+        auth,
+        "get_config",
+        lambda: {
+            "configurable": {
+                "thread_id": "agent-thread-1",
+                "omnia_thread": {
+                    "thread_id": "dm-kyle-luna",
+                    "event_id": "event-1",
+                    "journal_run_id": "journal-1",
+                },
+            }
+        },
+    )
+
+    asyncio.run(auth.leave_failure_comment("omnia", "Click https://auth.example/secret-token"))
+
+    await_args = reply.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
+    assert payload["dm_thread_id"] == "dm-kyle-luna"
+    assert payload["event_id"] == "event-1"
+    assert payload["journal_run_id"] == "journal-1"
+    assert "secret-token" not in payload["message"]
 
 
 def _slack_config(github_login: str | None = "mason-gh") -> dict:

@@ -1621,7 +1621,9 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         static_tools = [tool for tool in static_tools if tool not in slack_tools]
     if source != "omnia":
         static_tools = [
-            tool for tool in static_tools if tool not in {omnia_dm_reply, omnia_agent_action}
+            tool
+            for tool in static_tools
+            if tool is not omnia_dm_reply and tool is not omnia_agent_action
         ]
     dynamic_tool_middleware: DynamicToolMiddleware | None = None
     integration_tool_groups = {
