@@ -85,9 +85,11 @@ async def test_process_omnia_dm_uses_luna_and_durable_dispatch(
 
     await omnia_routes.process_omnia_dm(event)
 
-    configurable = dispatch.await_args.args[2]
+    await_args = dispatch.await_args
+    assert await_args is not None
+    configurable = await_args.args[2]
     assert configurable["source"] == "omnia"
     assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
     assert configurable["agent_effort"] == "high"
-    assert dispatch.await_args.kwargs["source"] == "omnia"
+    assert await_args.kwargs["source"] == "omnia"
     upsert.assert_awaited_once()

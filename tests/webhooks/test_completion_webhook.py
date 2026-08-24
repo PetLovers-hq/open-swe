@@ -49,7 +49,9 @@ async def test_error_status_posts_omnia_failure_reply(monkeypatch: pytest.Monkey
     )
 
     assert result["status"] == "ok"
-    payload = reply.await_args.args[0]
+    await_args = reply.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
     assert payload["kind"] == "message"
     assert payload["dm_thread_id"] == "dm-kyle-luna"
     assert payload["terminal_status"] == "error"
@@ -67,7 +69,9 @@ async def test_success_status_posts_omnia_terminal_event(monkeypatch: pytest.Mon
     )
 
     assert result == {"status": "ok", "reason": "Omnia completion posted"}
-    payload = reply.await_args.args[0]
+    await_args = reply.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
     assert payload["kind"] == "run_status"
     assert payload["status"] == "success"
 

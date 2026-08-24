@@ -27,7 +27,9 @@ async def test_omnia_agent_action_uses_trusted_run_identity(
     result = await omnia_agent_action("list_tasks")
 
     assert result["success"] is True
-    payload = post.await_args.args[0]
+    await_args = post.await_args
+    assert await_args is not None
+    payload = await_args.args[0]
     assert payload["sender_email"] == "kyle@example.com"
     assert payload["dm_thread_id"] == "dm-kyle-luna"
     assert payload["idempotency_key"].startswith("open-swe:unknown-run:")
