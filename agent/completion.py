@@ -23,6 +23,7 @@ from .utils.dashboard_links import dashboard_thread_url
 from .utils.github_app import get_github_app_installation_token
 from .utils.github_comments import post_github_comment
 from .utils.linear import comment_on_linear_issue
+from .utils.omnia import post_omnia_dm_event
 from .utils.slack import post_slack_thread_reply
 from .utils.thread_ops import langgraph_client
 from .utils.user_messages import warning
@@ -137,6 +138,25 @@ async def _post_failure_reply(thread_id: str, metadata: dict[str, Any], status: 
     ctx = metadata.get("source_context")
     ctx = ctx if isinstance(ctx, dict) else {}
     text = _failure_text(status)
+
+    if source == "omnia":
+        omnia_thread = ctx.get("omnia_thread")
+        if isinstance(omnia_thread, dict):
+            dm_thread_id = omnia_thread.get("thread_id")
+            if isinstance(dm_thread_id, str) and dm_thread_id:
+                posted, _ = await post_omnia_dm_event(
+                    {
+                        "kind": "message",
+                        "dm_thread_id": dm_thread_id,
+                        "message": text,
+                        "agent_thread_id": thread_id,
+                        "terminal_status": status,
+                        "event_id": omnia_thread.get("event_id"),
+                        "journal_run_id": omnia_thread.get("journal_run_id"),
+                    }
+                )
+                return posted
+        return False
 
     slack_thread = ctx.get("slack_thread")
     if source == "slack" or isinstance(slack_thread, dict):
@@ -284,6 +304,35 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
     if not isinstance(thread_id, str) or not thread_id:
         return {"status": "ignored", "reason": "missing thread_id"}
     if status == "success":
+        client = langgraph_client()
+        try:
+            thread = await client.threads.get(thread_id)
+        except Exception:  # noqa: BLE001
+            thread = None
+        metadata = thread.get("metadata") if isinstance(thread, dict) else None
+        metadata = metadata if isinstance(metadata, dict) else {}
+        source_context = metadata.get("source_context")
+        omnia_thread = (
+            source_context.get("omnia_thread") if isinstance(source_context, dict) else None
+        )
+        if metadata.get("source") == "omnia" and isinstance(omnia_thread, dict):
+            dm_thread_id = omnia_thread.get("thread_id")
+            if isinstance(dm_thread_id, str) and dm_thread_id:
+                posted, _ = await post_omnia_dm_event(
+                    {
+                        "kind": "run_status",
+                        "status": "success",
+                        "dm_thread_id": dm_thread_id,
+                        "agent_thread_id": thread_id,
+                        "run_id": run_id,
+                        "event_id": omnia_thread.get("event_id"),
+                        "journal_run_id": omnia_thread.get("journal_run_id"),
+                    }
+                )
+                return {
+                    "status": "ok" if posted else "error",
+                    "reason": "Omnia completion posted" if posted else "Omnia callback failed",
+                }
         return await _schedule_success_cost_refresh(thread_id, run_id, payload)
     payload_metadata = payload.get("metadata")
     if (

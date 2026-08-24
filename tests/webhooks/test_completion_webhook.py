@@ -30,6 +30,48 @@ def _slack_metadata() -> dict[str, Any]:
     }
 
 
+def _omnia_metadata() -> dict[str, Any]:
+    return {
+        "source": "omnia",
+        "source_context": {"omnia_thread": {"thread_id": "dm-kyle-luna"}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_error_status_posts_omnia_failure_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _FakeClient(_omnia_metadata())
+    monkeypatch.setattr(completion, "langgraph_client", lambda: client)
+    reply = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(completion, "post_omnia_dm_event", reply)
+
+    result = await completion.handle_run_completion(
+        {"thread_id": "t1", "run_id": "run-1", "status": "error"}
+    )
+
+    assert result["status"] == "ok"
+    payload = reply.await_args.args[0]
+    assert payload["kind"] == "message"
+    assert payload["dm_thread_id"] == "dm-kyle-luna"
+    assert payload["terminal_status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_success_status_posts_omnia_terminal_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _FakeClient(_omnia_metadata())
+    monkeypatch.setattr(completion, "langgraph_client", lambda: client)
+    reply = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(completion, "post_omnia_dm_event", reply)
+
+    result = await completion.handle_run_completion(
+        {"thread_id": "t1", "run_id": "run-1", "status": "success"}
+    )
+
+    assert result == {"status": "ok", "reason": "Omnia completion posted"}
+    payload = reply.await_args.args[0]
+    assert payload["kind"] == "run_status"
+    assert payload["status"] == "success"
+
+
 @pytest.mark.asyncio
 async def test_error_status_posts_slack_failure_reply(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _FakeClient(_slack_metadata())
