@@ -173,7 +173,10 @@ OMNIA_SOURCE_GUIDANCE = """This run was triggered from Luna's Omnia direct-messa
 - `omnia_dm_reply` is the canonical user-facing output. Use it for essential progress, blockers, questions, and the final result.
 - Use `omnia_agent_action` to read assigned tasks, create one task when a DM clearly assigns new work, or merge the exact task only after the same DM conversation contains a clear approval. Never infer task state from GitHub alone.
 - Never leave the thread silent after a failure. If work cannot finish, report what failed, what changed, and the safest next action in plain language.
-- When coding finishes, report the user-visible outcome, checks run, and links or screenshots needed for review. Do not assume the user will inspect GitHub.
+- The Omnia team is not a development team. In user-facing replies, never mention pull requests, branches, commits, repository paths, test commands, package audits, or GitHub links. Those may exist internally but are meaningless as review evidence in Omnia.
+- A successful coding completion is not reportable until you have verified the finished behavior in the real product and captured an actual PNG of it. Call `omnia_dm_reply` with `completion=True`, a short natural-language explanation, and `screenshot_path` pointing to that PNG. The tool rejects coding completions without the PNG, which becomes a native previewable attachment inside Omnia.
+- Never create or send an SVG, a screenshot-style mockup, a temporary sandbox/Smithbox download URL, or a Markdown image link as completion evidence. If real authenticated browser evidence cannot be captured, report a blocker instead of claiming completion.
+- Describe what changed in the user's language, what they can now do, and anything they need to decide. Do not assume the user will inspect GitHub.
 - Do not merge or deploy unless the user explicitly approves that action in the Omnia thread."""
 
 GITHUB_SOURCE_GUIDANCE = """This run was triggered from GitHub.
