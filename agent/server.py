@@ -149,6 +149,8 @@ from .tools import (
     manage_baby_sit,
     manage_thread,
     notify_automation_channel,
+    omnia_agent_action,
+    omnia_dm_reply,
     open_pull_request,
     output_iframe,
     read_user_settings,
@@ -1594,6 +1596,8 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         manage_thread,
         manage_baby_sit,
         notify_automation_channel,
+        omnia_dm_reply,
+        omnia_agent_action,
         open_pull_request,
         *((output_iframe, create_sandbox_file_download_url) if sandbox_file_downloads else ()),
         read_user_settings,
@@ -1615,6 +1619,10 @@ async def get_agent(config: RunnableConfig) -> Pregel:
     reserved_tool_names = {_registered_tool_name(tool) for tool in static_tools}
     if not _slack_tools_enabled(configurable):
         static_tools = [tool for tool in static_tools if tool not in slack_tools]
+    if source != "omnia":
+        static_tools = [
+            tool for tool in static_tools if tool not in {omnia_dm_reply, omnia_agent_action}
+        ]
     dynamic_tool_middleware: DynamicToolMiddleware | None = None
     integration_tool_groups = {
         "Corridor": corridor_tools,

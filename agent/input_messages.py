@@ -9,7 +9,7 @@ from langchain_core.messages import AnyMessage, BaseMessage
 
 INJECTED_DYNAMIC_CONTEXT_HASHES_KEY = "injected_dynamic_context_hashes"
 
-Surface = Literal["slack", "linear", "github", "web", "desktop", "automation", "eval"]
+Surface = Literal["slack", "linear", "github", "omnia", "web", "desktop", "automation", "eval"]
 EntityKind = Literal["person", "channel", "system"]
 MessageKind = Literal["human", "system"]
 

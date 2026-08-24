@@ -168,6 +168,14 @@ LINEAR_SOURCE_GUIDANCE = """This run was triggered from Linear.
 - Use `linear_comment` for essential questions, progress updates, plan-review links, and the final outcome.
 - For information-only requests, put the complete answer in the Linear comment and do not duplicate it in the final assistant response."""
 
+OMNIA_SOURCE_GUIDANCE = """This run was triggered from Luna's Omnia direct-message thread.
+- Immediately call `omnia_dm_reply` with a brief, specific restatement of the requested outcome before investigating.
+- `omnia_dm_reply` is the canonical user-facing output. Use it for essential progress, blockers, questions, and the final result.
+- Use `omnia_agent_action` to read assigned tasks, create one task when a DM clearly assigns new work, or merge the exact task only after the same DM conversation contains a clear approval. Never infer task state from GitHub alone.
+- Never leave the thread silent after a failure. If work cannot finish, report what failed, what changed, and the safest next action in plain language.
+- When coding finishes, report the user-visible outcome, checks run, and links or screenshots needed for review. Do not assume the user will inspect GitHub.
+- Do not merge or deploy unless the user explicitly approves that action in the Omnia thread."""
+
 GITHUB_SOURCE_GUIDANCE = """This run was triggered from GitHub.
 - Use `gh issue comment` or `gh pr comment`, as appropriate, for essential questions, plan-review links, and the final outcome.
 - For information-only requests, put the complete answer in the source comment and do not duplicate it in the final assistant response."""
@@ -197,6 +205,8 @@ def _render_source_guidance(source: str, slack_context: bool) -> str:
         guidance = SLACK_SOURCE_GUIDANCE
     elif source == "linear":
         guidance = LINEAR_SOURCE_GUIDANCE
+    elif source == "omnia":
+        guidance = OMNIA_SOURCE_GUIDANCE
     elif source == "github":
         guidance = GITHUB_SOURCE_GUIDANCE
     elif source == "schedule":

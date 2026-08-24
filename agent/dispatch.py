@@ -71,7 +71,7 @@ V2_RUN_STREAM_MODES: tuple[str, ...] = (
 def _dispatch_input(content: ContentBlocks, source: str, configurable: dict[str, Any]) -> RunInput:
     surface: Surface = (
         source
-        if source in {"slack", "linear", "github", "web", "desktop", "eval"}
+        if source in {"slack", "linear", "github", "omnia", "web", "desktop", "eval"}
         else "automation"
     )  # type: ignore[assignment]
     people: list[PersonIdentity] = []
@@ -126,6 +126,31 @@ def _dispatch_input(content: ContentBlocks, source: str, configurable: dict[str,
     if not sender_id and surface == "linear" and isinstance(email, str) and email:
         sender_id = f"linear:{email.lower()}"
         people.append({"id": sender_id, "platform": "linear", "email": email})
+    omnia_thread = configurable.get("omnia_thread")
+    if surface == "omnia" and isinstance(omnia_thread, dict):
+        omnia_sender_id = omnia_thread.get("sender_id")
+        omnia_thread_id = omnia_thread.get("thread_id")
+        if isinstance(omnia_sender_id, str) and omnia_sender_id:
+            sender_id = f"omnia:{omnia_sender_id}"
+            person = {"id": sender_id, "platform": "omnia"}
+            display_name = omnia_thread.get("sender_name")
+            if isinstance(display_name, str) and display_name:
+                person["display_name"] = display_name
+            if isinstance(login, str) and login:
+                person["github_login"] = login
+            if isinstance(email, str) and email:
+                person["email"] = email
+            people.append(person)
+        if isinstance(omnia_thread_id, str) and omnia_thread_id:
+            channel_id = f"omnia:{omnia_thread_id}"
+            channels.append(
+                {
+                    "id": channel_id,
+                    "platform": "omnia",
+                    "name": "Luna DM",
+                    "thread_id": omnia_thread_id,
+                }
+            )
     kind = "human" if sender_id else "system"
     if not sender_id:
         sender_id = f"system:{source.replace('_', '-')}"
