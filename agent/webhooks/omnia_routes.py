@@ -2,9 +2,11 @@
 
 import os
 import uuid
-from typing import Any
+from typing import Any, cast
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from langchain_core.messages.content import create_text_block
 from pydantic import BaseModel, Field
 
 from ..dispatch import dispatch_agent_run
@@ -12,6 +14,8 @@ from ..utils.omnia import post_omnia_dm_event, verify_omnia_signature
 from . import common
 
 router = APIRouter()
+
+_SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
 class OmniaDmEvent(BaseModel):
@@ -39,9 +43,75 @@ def _repo(event: OmniaDmEvent) -> dict[str, str]:
     }
 
 
+def _attachment_context(event: OmniaDmEvent) -> str:
+    if not event.attachments:
+        return event.message
+    lines = [event.message, "", "Omnia attachments:"]
+    for attachment in event.attachments:
+        name = attachment.get("name", "attachment")
+        url = attachment.get("url", "")
+        mime = attachment.get("mime", "")
+        if url:
+            location = "embedded below" if mime.lower().startswith("image/") else url
+            lines.append(f"- {name} ({mime}): {location}")
+    return "\n".join(lines)
+
+
+async def _multimodal_content(
+    event: OmniaDmEvent,
+    model_id: str,
+    effort: str,
+) -> tuple[str | list[dict[str, Any]], str, str]:
+    text = _attachment_context(event)
+    images = [
+        attachment
+        for attachment in event.attachments
+        if attachment.get("mime", "").lower().startswith("image/") and attachment.get("url")
+    ]
+    if not images:
+        return text, model_id, effort
+
+    if not common.model_supports_images(model_id):
+        model_id, effort = common.default_vision_model_pair()
+
+    blocks: list[dict[str, Any]] = [cast(dict[str, Any], create_text_block(text))]
+    async with httpx.AsyncClient(timeout=common.DEFAULT_HTTP_TIMEOUT) as client:
+        for attachment in images:
+            name = attachment.get("name", "attachment")
+            mime = attachment.get("mime", "").lower()
+            if mime not in _SUPPORTED_IMAGE_MIME_TYPES:
+                blocks.append(
+                    cast(
+                        dict[str, Any],
+                        create_text_block(
+                            f"The attached image {name} was not included because {mime or 'its type'} "
+                            "is unsupported. Do not claim to have seen it."
+                        ),
+                    )
+                )
+                continue
+            image_block = await common.fetch_image_block(attachment["url"], client)
+            if image_block is None:
+                blocks.append(
+                    cast(
+                        dict[str, Any],
+                        create_text_block(
+                            f"The attached image {name} could not be loaded. "
+                            "Do not claim to have seen it."
+                        ),
+                    )
+                )
+                continue
+            blocks.append(cast(dict[str, Any], image_block))
+    return blocks, model_id, effort
+
+
 async def process_omnia_dm(event: OmniaDmEvent) -> None:
     thread_id = _thread_id(event.dm_thread_id)
     repo = _repo(event)
+    model_id = os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-5.6-luna")
+    effort = os.environ.get("OMNIA_AGENT_EFFORT", "high")
+    content, model_id, effort = await _multimodal_content(event, model_id, effort)
     omnia_thread: dict[str, Any] = {
         "thread_id": event.dm_thread_id,
         "event_id": event.event_id,
@@ -54,8 +124,8 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
         "repo": repo,
         "source": "omnia",
         "omnia_thread": omnia_thread,
-        "agent_model_id": os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-5.6-luna"),
-        "agent_effort": os.environ.get("OMNIA_AGENT_EFFORT", "high"),
+        "agent_model_id": model_id,
+        "agent_effort": effort,
     }
     if event.sender_email:
         configurable["user_email"] = event.sender_email
@@ -71,16 +141,6 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
         title=event.message,
         source_context=source_context,
     )
-    content = event.message
-    if event.attachments:
-        lines = ["\n\nOmnia attachments:"]
-        for attachment in event.attachments:
-            name = attachment.get("name", "attachment")
-            url = attachment.get("url", "")
-            mime = attachment.get("mime", "")
-            if url:
-                lines.append(f"- {name} ({mime}): {url}")
-        content += "\n".join(lines)
     await dispatch_agent_run(
         thread_id,
         content,
