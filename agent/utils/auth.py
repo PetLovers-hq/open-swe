@@ -20,6 +20,7 @@ from .github_token import (
 )
 from .http import DEFAULT_HTTP_TIMEOUT
 from .linear import comment_on_linear_issue
+from .omnia import post_omnia_dm_event
 from .slack import LANGGRAPH_URL, get_active_slack_thread, post_slack_thread_reply
 from .user_messages import WARNING_ICON, warning
 
@@ -290,6 +291,27 @@ async def leave_failure_comment(
                     f"with GitHub and connect your Slack account in {link}, then mention it again."
                 ),
                 agent_thread_id=thread_id if isinstance(thread_id, str) else None,
+            )
+        return
+    if source == "omnia":
+        omnia_thread = configurable.get("omnia_thread", {})
+        dm_thread_id = omnia_thread.get("thread_id") if isinstance(omnia_thread, dict) else None
+        thread_id = configurable.get("thread_id")
+        if isinstance(dm_thread_id, str) and dm_thread_id:
+            await post_omnia_dm_event(
+                {
+                    "kind": "message",
+                    "dm_thread_id": dm_thread_id,
+                    "message": warning(
+                        "Luna couldn't authenticate with GitHub for this run. "
+                        "The task was not started; try again after the runtime credentials "
+                        "are repaired."
+                    ),
+                    "agent_thread_id": thread_id if isinstance(thread_id, str) else None,
+                    "terminal_status": "error",
+                    "event_id": omnia_thread.get("event_id"),
+                    "journal_run_id": omnia_thread.get("journal_run_id"),
+                }
             )
         return
     if source in ("github", "github_push"):

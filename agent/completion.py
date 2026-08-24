@@ -239,6 +239,15 @@ def _prepare_run_id(payload: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _completion_metadata(
+    thread_metadata: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any]:
+    payload_metadata = payload.get("metadata")
+    if not isinstance(payload_metadata, dict):
+        return thread_metadata
+    return {**thread_metadata, **payload_metadata}
+
+
 async def _schedule_success_cost_refresh(
     thread_id: str, run_id: str | None, payload: dict[str, Any]
 ) -> dict[str, str]:
@@ -311,6 +320,7 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
             thread = None
         metadata = thread.get("metadata") if isinstance(thread, dict) else None
         metadata = metadata if isinstance(metadata, dict) else {}
+        metadata = _completion_metadata(metadata, payload)
         source_context = metadata.get("source_context")
         omnia_thread = (
             source_context.get("omnia_thread") if isinstance(source_context, dict) else None
@@ -353,6 +363,7 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
 
     metadata = thread.get("metadata") if isinstance(thread, dict) else None
     metadata = metadata if isinstance(metadata, dict) else {}
+    metadata = _completion_metadata(metadata, payload)
     await _settle_failed_reviewer_check(thread_id, metadata)
     if run_id is None:
         # Payloads without run ids fall back to the old per-thread flag; run-scoped
