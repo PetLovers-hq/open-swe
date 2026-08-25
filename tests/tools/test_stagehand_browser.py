@@ -261,6 +261,59 @@ async def test_cdp_browser_url_guard_blocks_real_stagehand_requests(
 
 
 @pytest.mark.asyncio
+async def test_cdp_guard_reuses_vercel_automation_bypass_for_preview_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    session.data.cdp_url = "ws://browser.example/devtools/browser/session-123"
+    del session.page
+    websocket = FakeCDPWebSocket()
+    websocket.responses["Target.getTargets"] = {
+        "targetInfos": [{"targetId": "preview", "type": "page", "url": "about:blank"}]
+    }
+    websocket.target_responses["preview"] = {"sessionId": "cdp-session-preview"}
+
+    async def connect_cdp_websocket(_cdp_url: str) -> FakeCDPWebSocket:
+        return websocket
+
+    monkeypatch.setattr(stagehand_browser, "_connect_cdp_websocket", connect_cdp_websocket)
+    await stagehand_browser._install_browser_url_guard(session)
+
+    for request_id, url in (
+        (
+            "bootstrap",
+            "https://omnia-preview.vercel.app/session?x-vercel-protection-bypass=secret-123",
+        ),
+        ("profile", "https://omnia-preview.vercel.app/people/kyle"),
+    ):
+        await websocket.emit(
+            {
+                "method": "Fetch.requestPaused",
+                "sessionId": "cdp-session-preview",
+                "params": {
+                    "requestId": request_id,
+                    "request": {"url": url, "headers": {"accept": "text/html"}},
+                },
+            }
+        )
+        await asyncio.sleep(0)
+
+    continued = [
+        message
+        for message in websocket.sent
+        if message.get("method") == "Fetch.continueRequest"
+        and isinstance(message.get("params"), dict)
+        and message["params"].get("requestId") in {"bootstrap", "profile"}
+    ]
+    assert len(continued) == 2
+    for message in continued:
+        headers = message["params"]["headers"]
+        assert {"name": "x-vercel-protection-bypass", "value": "secret-123"} in headers
+
+    await session._open_swe_cdp_guard.close()
+
+
+@pytest.mark.asyncio
 async def test_cdp_browser_url_guard_waits_for_initial_fetch_enable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
