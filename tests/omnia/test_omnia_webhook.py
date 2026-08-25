@@ -92,7 +92,28 @@ async def test_process_omnia_dm_uses_luna_and_durable_dispatch(
     assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
     assert configurable["agent_effort"] == "high"
     assert await_args.kwargs["source"] == "omnia"
+    assert await_args.kwargs["multitask_strategy"] == "enqueue"
     upsert.assert_awaited_once()
+
+
+def test_omnia_scope_lanes_are_stable_and_conservative() -> None:
+    dm = "dm-kyle-luna"
+    app_thread = omnia_routes._thread_id(dm, "Add threaded replies to chat")
+    profile_thread = omnia_routes._thread_id(dm, "Make team profiles clickable")
+    inventory_thread = omnia_routes._thread_id(dm, "Fix the inventory SKU reconciliation")
+
+    assert app_thread == profile_thread
+    assert inventory_thread != app_thread
+    assert inventory_thread == omnia_routes._thread_id(dm, "Review FBA inventory stock")
+
+
+def test_cross_domain_request_fails_safe_to_shared_app_lane() -> None:
+    dm = "dm-kyle-luna"
+
+    assert omnia_routes._scope_key("Compare inventory margin and ad campaign results") == "app"
+    assert omnia_routes._thread_id(
+        dm, "Compare inventory margin and ad campaign results"
+    ) == omnia_routes._thread_id(dm, "Update the shared Omnia shell")
 
 
 @pytest.mark.asyncio
