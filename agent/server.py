@@ -791,7 +791,9 @@ page is unfamiliar.
 natural-language instructions (one action per call).
 4. Use `browser_extract` to pull the specific data the caller asked for, \
 passing a JSON schema when you need a precise shape.
-5. Always call `browser_close` when finished to release the session.
+5. For visual evidence, call `browser_screenshot`; return its sandbox `file_path`
+   verbatim to the caller so it can be attached natively.
+6. Always call `browser_close` when finished to release the session.
 
 Guidance:
 - Take one concrete step at a time and verify the result before the next.

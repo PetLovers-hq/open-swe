@@ -71,6 +71,60 @@ def test_explicit_stagehand_model_still_wins(monkeypatch: pytest.MonkeyPatch) ->
     assert stagehand_browser._model_name() == "openai/gpt-5"
 
 
+@pytest.mark.asyncio
+async def test_browser_screenshot_writes_real_png_into_sandbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    png = b"\x89PNG\r\n\x1a\nreal-pixels"
+
+    class Guard:
+        def failure(self) -> None:
+            return None
+
+        async def capture_png(self) -> bytes:
+            return png
+
+    session = FakeSession()
+    session._open_swe_cdp_guard = Guard()  # type: ignore[assignment]
+
+    class Result:
+        exit_code = 0
+
+    class Backend:
+        uploaded: list[tuple[str, bytes]] = []
+
+        async def aexecute(self, _command: str) -> Result:
+            return Result()
+
+        async def aupload_files(self, files: list[tuple[str, bytes]]) -> list[object]:
+            self.uploaded.extend(files)
+            return [object()]
+
+    backend = Backend()
+
+    async def get_session(*_args: object, **_kwargs: object) -> FakeSession:
+        return session
+
+    async def get_backend(_thread_id: str) -> Backend:
+        return backend
+
+    async def work_dir(_backend: Backend) -> str:
+        return "/workspace/Omnia"
+
+    monkeypatch.setattr(stagehand_browser, "_get_session", get_session)
+    monkeypatch.setattr(stagehand_browser, "get_sandbox_backend", get_backend)
+    monkeypatch.setattr(stagehand_browser, "aresolve_sandbox_work_dir", work_dir)
+
+    result = await stagehand_browser.browser_screenshot("profile.png")
+
+    assert result == {
+        "success": True,
+        "file_path": "/workspace/Omnia/.luna-evidence/profile.png",
+        "bytes": len(png),
+    }
+    assert backend.uploaded == [("/workspace/Omnia/.luna-evidence/profile.png", png)]
+
+
 class FakeRequest:
     def __init__(self, url: str) -> None:
         self.url = url
