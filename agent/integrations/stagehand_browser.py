@@ -8,7 +8,8 @@ Two execution modes, selected by ``STAGEHAND_ENV`` (default ``LOCAL``):
 
 * ``LOCAL``  — Stagehand runs its bundled local engine in-process and drives a
   local Chromium. Nothing leaves the host. Needs a Chrome/Chromium binary;
-  point at it with ``STAGEHAND_LOCAL_CHROME_PATH`` if auto-detection fails.
+    point at it with ``STAGEHAND_LOCAL_CHROME_PATH`` if auto-detection fails.
+    The bundled Stagehand launcher also reads ``CHROME_PATH`` directly.
 * ``BROWSERBASE`` — the browser runs on Browserbase's cloud. Requires
   ``BROWSERBASE_API_KEY``. ``BROWSERBASE_PROJECT_ID`` is forwarded when set.
 
@@ -120,7 +121,7 @@ def _build_client() -> Any:
         browserbase_project_id=os.getenv("BROWSERBASE_PROJECT_ID"),
         model_api_key=_model_api_key(),
         local_headless=_headless(),
-        local_chrome_path=os.getenv("STAGEHAND_LOCAL_CHROME_PATH"),
+        local_chrome_path=os.getenv("STAGEHAND_LOCAL_CHROME_PATH") or os.getenv("CHROME_PATH"),
     )
 
 
@@ -133,7 +134,7 @@ def _browser_spec() -> dict[str, Any]:
     if not _is_local():
         return {"type": "browserbase"}
     launch_options: dict[str, Any] = {"headless": _headless()}
-    chrome_path = os.getenv("STAGEHAND_LOCAL_CHROME_PATH")
+    chrome_path = os.getenv("STAGEHAND_LOCAL_CHROME_PATH") or os.getenv("CHROME_PATH")
     if chrome_path:
         launch_options["executable_path"] = chrome_path
     return {"type": "local", "launch_options": launch_options}

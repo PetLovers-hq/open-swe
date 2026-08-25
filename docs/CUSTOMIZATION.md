@@ -309,6 +309,7 @@ The tools are added in `agent/server.py` (gated by `load_browser_tools()`), and 
 | `STAGEHAND_MODEL` | provider-aware | Model Stagehand uses. Defaults to `openai/gpt-4.1-mini` when only an OpenAI key is configured, otherwise `anthropic/claude-sonnet-4-5`. |
 | `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` | — | `BROWSERBASE_API_KEY` is required when `STAGEHAND_ENV=BROWSERBASE`; `BROWSERBASE_PROJECT_ID` is forwarded when set. |
 | `STAGEHAND_LOCAL_CHROME_PATH` | `/usr/bin/chromium` in Docker | Path to the Chrome/Chromium binary for `LOCAL` mode. |
+| `CHROME_PATH` | `/usr/bin/chromium` in Docker | Compatibility path consumed directly by Stagehand's bundled local launcher. |
 | `STAGEHAND_HEADLESS` | `true` | Run the local browser headless. |
 
 For `LOCAL` mode both the API-server image (`Dockerfile`, where Stagehand runs) and the coding sandbox image (`Dockerfile.sandbox`, for direct browser scripts) install `chromium`; for `BROWSERBASE` mode no browser binary is needed in either image.
