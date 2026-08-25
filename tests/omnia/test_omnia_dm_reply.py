@@ -11,7 +11,11 @@ def _config() -> dict:
         "run_id": "run-1",
         "configurable": {
             "thread_id": "agent-thread-1",
-            "omnia_thread": {"thread_id": "dm-kyle-luna", "journal_run_id": 44},
+            "omnia_thread": {
+                "thread_id": "dm-kyle-luna",
+                "event_id": "note-123",
+                "journal_run_id": 44,
+            },
         },
     }
 
@@ -61,6 +65,8 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
     ]
     assert "github" not in payload["message"].lower()
     assert payload["purpose"] == "review"
+    assert payload["event_id"] == "note-123"
+    assert payload["journal_run_id"] == 44
     assert payload["evidence"]["task_number"] == 7
     assert payload["evidence"]["auth_receipt"] == "11111111-1111-4111-8111-111111111111"
 
