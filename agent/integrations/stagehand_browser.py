@@ -35,6 +35,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from langgraph.config import get_config
 
@@ -232,6 +233,12 @@ class _CDPBrowserURLGuard:
         self._configuration_tasks: set[asyncio.Task[None]] = set()
         self._fetch_tasks: dict[str, asyncio.Task[None]] = {}
         self._failure: BaseException | None = None
+        # Vercel's automation launcher conveys the project bypass in a
+        # one-use navigation URL. Browserbase's navigation transport does not
+        # reliably retain the Set-Cookie from Vercel's query-strip redirect,
+        # so remember it only inside this browser session and add the supported
+        # header to later requests for that exact preview host.
+        self._vercel_bypass_by_host: dict[str, str] = {}
 
     async def start(self) -> None:
         try:
@@ -538,9 +545,22 @@ class _CDPBrowserURLGuard:
             return
         safe, reason = is_url_safe(url)
         if safe:
+            parsed = urlparse(url)
+            bypass = parse_qs(parsed.query).get("x-vercel-protection-bypass", [None])[0]
+            if isinstance(bypass, str) and bypass:
+                self._vercel_bypass_by_host[parsed.hostname or ""] = bypass
+            remembered = self._vercel_bypass_by_host.get(parsed.hostname or "")
+            continue_params: dict[str, Any] = {"requestId": request_id}
+            if remembered and parsed.hostname and parsed.hostname.endswith(".vercel.app"):
+                existing = request.get("headers") if isinstance(request, dict) else None
+                headers = dict(existing) if isinstance(existing, dict) else {}
+                headers["x-vercel-protection-bypass"] = remembered
+                continue_params["headers"] = [
+                    {"name": str(name), "value": str(value)} for name, value in headers.items()
+                ]
             await self._send_fire_and_forget(
                 "Fetch.continueRequest",
-                {"requestId": request_id},
+                continue_params,
                 session_id=session_id,
             )
             return
