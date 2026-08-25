@@ -59,7 +59,12 @@ def _is_local() -> bool:
 
 
 def _model_name() -> str:
-    return os.getenv("STAGEHAND_MODEL", _DEFAULT_MODEL)
+    configured = os.getenv("STAGEHAND_MODEL")
+    if configured:
+        return configured
+    if os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
+        return "openai/gpt-4.1-mini"
+    return _DEFAULT_MODEL
 
 
 def _model_api_key() -> str | None:
@@ -67,6 +72,7 @@ def _model_api_key() -> str | None:
         os.getenv("STAGEHAND_MODEL_API_KEY")
         or os.getenv("MODEL_API_KEY")
         or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
     )
 
 

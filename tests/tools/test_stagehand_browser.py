@@ -48,6 +48,29 @@ def test_browserbase_project_id_is_forwarded_when_set(monkeypatch: pytest.Monkey
     assert stagehand_browser._browserbase_session_create_params() == {"project_id": "project-123"}
 
 
+def test_local_browser_uses_existing_openai_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "STAGEHAND_MODEL_API_KEY",
+        "MODEL_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "STAGEHAND_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("STAGEHAND_ENV", "LOCAL")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    assert stagehand_browser.browser_tools_enabled() is True
+    assert stagehand_browser._model_api_key() == "openai-key"
+    assert stagehand_browser._model_name() == "openai/gpt-4.1-mini"
+
+
+def test_explicit_stagehand_model_still_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setenv("STAGEHAND_MODEL", "openai/gpt-5")
+
+    assert stagehand_browser._model_name() == "openai/gpt-5"
+
+
 class FakeRequest:
     def __init__(self, url: str) -> None:
         self.url = url

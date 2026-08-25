@@ -1,5 +1,13 @@
 FROM langchain/langgraph-api:0.11.2-py3.12
 
+# Stagehand LOCAL browser tools execute in the LangGraph API process, not in
+# the coding sandbox. Keep Chromium in this image as well as Dockerfile.sandbox
+# so browser verification cannot be silently disabled in hosted deployments.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/*
+ENV STAGEHAND_LOCAL_CHROME_PATH=/usr/bin/chromium
+
 ADD . /deps/open-swe
 RUN cd /deps/open-swe \
     && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .
