@@ -55,9 +55,12 @@ def _scope_key(message: str) -> str:
 
 def _thread_id(dm_thread_id: str, message: str) -> str:
     scope = _scope_key(message)
+    epoch = os.environ.get("OMNIA_THREAD_EPOCH", "").strip()
     # Preserve the original app-lane identity so a deployment does not orphan
     # an in-flight legacy run or its durable checkpoints.
     suffix = f"/scope/{scope}" if scope != "app" else ""
+    if epoch:
+        suffix += f"/runtime/{epoch}"
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}{suffix}"))
 
 
