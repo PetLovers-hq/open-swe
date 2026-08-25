@@ -100,6 +100,33 @@ async def test_coding_completion_requires_png(monkeypatch: pytest.MonkeyPatch) -
     post.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("terminal_outcome", "purpose", "terminal_status"),
+    [("blocker", "blocker", None), ("failure", "progress", "error")],
+)
+async def test_omnia_reply_can_send_terminal_non_review_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    terminal_outcome: str,
+    purpose: str,
+    terminal_status: str | None,
+) -> None:
+    module = __import__("agent.tools.omnia_dm_reply", fromlist=["omnia_dm_reply"])
+    monkeypatch.setattr(module, "get_config", _config)
+    post = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(module, "post_omnia_dm_event", post)
+
+    result = await omnia_dm_reply(
+        "The authenticated preview is unavailable.",
+        terminal_outcome=terminal_outcome,
+    )
+
+    assert result == {"success": True}
+    payload = post.await_args.args[0]
+    assert payload["purpose"] == purpose
+    assert payload.get("terminal_status") == terminal_status
+
+
 def test_omnia_prompt_hides_developer_plumbing_and_requires_native_png() -> None:
     prompt = __import__("agent.prompt", fromlist=["OMNIA_SOURCE_GUIDANCE"])
     guidance = prompt.OMNIA_SOURCE_GUIDANCE
@@ -109,3 +136,5 @@ def test_omnia_prompt_hides_developer_plumbing_and_requires_native_png() -> None
     assert "native previewable attachment" in guidance
     assert "Smithbox" in guidance
     assert "Confirm this visual proof" in guidance
+    assert 'terminal_outcome="blocker"' in guidance
+    assert 'terminal_outcome="failure"' in guidance
