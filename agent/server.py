@@ -1550,7 +1550,10 @@ async def get_agent(config: RunnableConfig) -> Pregel:
                 observability_tools = await load_langsmith_tools(profile_login, allow_team=False)
         async with aphase(thread_id, "factory.corridor_tools"):
             corridor_tools = await _load_corridor_mcp_tools()
-        browser_tools = load_browser_tools()
+        # Omnia visual proof runs inside the durable coding sandbox so the
+        # authenticated PNG lands in the same filesystem consumed by
+        # omnia_dm_reply. The hosted serverless image cannot provision Chrome.
+        browser_tools = [] if source == "omnia" else load_browser_tools()
 
         if profile_login:
             async with aphase(thread_id, "factory.integration_tools"):

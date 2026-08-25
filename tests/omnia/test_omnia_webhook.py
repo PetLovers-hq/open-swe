@@ -116,6 +116,19 @@ def test_cross_domain_request_fails_safe_to_shared_app_lane() -> None:
     ) == omnia_routes._thread_id(dm, "Update the shared Omnia shell")
 
 
+def test_omnia_thread_epoch_rotates_sandbox_without_changing_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dm = "dm-kyle-luna"
+    before = omnia_routes._thread_id(dm, "Make team profiles clickable")
+    monkeypatch.setenv("OMNIA_THREAD_EPOCH", "browser-v1")
+
+    after = omnia_routes._thread_id(dm, "Make team profiles clickable")
+
+    assert after != before
+    assert after == omnia_routes._thread_id(dm, "Add threaded replies to chat")
+
+
 @pytest.mark.asyncio
 async def test_process_omnia_dm_sends_screenshot_as_native_image_block(
     monkeypatch: pytest.MonkeyPatch,
