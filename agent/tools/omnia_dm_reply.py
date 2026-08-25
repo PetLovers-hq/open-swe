@@ -3,7 +3,7 @@
 import base64
 import posixpath
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.config import get_config
 
@@ -52,6 +52,7 @@ async def omnia_dm_reply(
     preview_url: str | None = None,
     auth_receipt: str | None = None,
     passed_checks: list[str] | None = None,
+    terminal_outcome: Literal["blocker", "failure"] | None = None,
 ) -> dict[str, Any]:
     """Send a human-readable update to Luna's Omnia DM.
 
@@ -66,6 +67,8 @@ async def omnia_dm_reply(
             "success": False,
             "error": "A successful coding completion requires a real PNG screenshot_path",
         }
+    if completion and terminal_outcome is not None:
+        return {"success": False, "error": "A completion cannot also be a blocker or failure"}
     if completion and (
         not isinstance(task_number, int)
         or not isinstance(commit_sha, str)
@@ -98,15 +101,21 @@ async def omnia_dm_reply(
         except ValueError as exc:
             return {"success": False, "error": str(exc)}
     payload: dict[str, Any] = {
-            "kind": "message",
-            "dm_thread_id": thread_id,
-            "message": message.strip(),
-            "agent_thread_id": configurable.get("thread_id"),
-            "run_id": str(run_id) if run_id else None,
-            "journal_run_id": omnia_thread.get("journal_run_id"),
-            "attachments": attachments,
-            "purpose": "review" if completion else "progress",
-        }
+        "kind": "message",
+        "dm_thread_id": thread_id,
+        "message": message.strip(),
+        "agent_thread_id": configurable.get("thread_id"),
+        "run_id": str(run_id) if run_id else None,
+        "journal_run_id": omnia_thread.get("journal_run_id"),
+        "attachments": attachments,
+        "purpose": "review"
+        if completion
+        else "blocker"
+        if terminal_outcome == "blocker"
+        else "progress",
+    }
+    if terminal_outcome == "failure":
+        payload["terminal_status"] = "error"
     if completion:
         payload["evidence"] = {
             "task_number": task_number,
