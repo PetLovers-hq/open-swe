@@ -8,6 +8,7 @@ from agent.input_messages import system_input
 from agent.middleware.ensure_no_empty_msg import (
     check_if_confirming_completion,
     check_if_model_messaged_user,
+    check_if_omnia_terminal_delivered,
     ensure_no_empty_msg,
     get_every_message_since_last_human,
 )
@@ -176,6 +177,94 @@ class TestEnsureNoEmptyMsgNotify:
         assert result is not None
         assert len(result["messages"]) == 2
         assert result["messages"][0].tool_calls[0]["name"] == "no_op"
+
+    def test_omnia_progress_and_prior_no_op_cannot_end_turn(self) -> None:
+        empty_ai = AIMessage(content="")
+        progress_call = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "omnia_dm_reply",
+                    "args": {"message": "Still working."},
+                    "id": "progress-1",
+                }
+            ],
+        )
+        state: AgentState[Any] = {
+            "messages": [
+                HumanMessage(content="finish the task"),
+                progress_call,
+                ToolMessage(
+                    content='{"success": true}',
+                    tool_call_id="progress-1",
+                    name="omnia_dm_reply",
+                ),
+                ToolMessage(content="No operation performed.", tool_call_id="old", name="no_op"),
+                empty_ai,
+            ]
+        }
+
+        with patch(
+            "agent.middleware.ensure_no_empty_msg.get_config",
+            return_value={"configurable": {"source": "omnia"}},
+        ):
+            result = ensure_no_empty_msg.after_model(state, self._make_runtime())
+
+        assert result is not None
+        assert result["messages"][0].tool_calls[0]["name"] == "confirming_completion"
+
+    def test_omnia_successful_terminal_delivery_can_end_turn(self) -> None:
+        terminal_call = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "omnia_dm_reply",
+                    "args": {"message": "Blocked.", "terminal_outcome": "blocker"},
+                    "id": "terminal-1",
+                }
+            ],
+        )
+        messages: list[AnyMessage] = [
+            terminal_call,
+            ToolMessage(
+                content='{"success": true}',
+                tool_call_id="terminal-1",
+                name="omnia_dm_reply",
+            ),
+        ]
+        assert check_if_omnia_terminal_delivered(messages) is True
+
+        state: AgentState[Any] = {
+            "messages": [HumanMessage(content="finish the task"), *messages, AIMessage(content="")]
+        }
+        with patch(
+            "agent.middleware.ensure_no_empty_msg.get_config",
+            return_value={"configurable": {"source": "omnia"}},
+        ):
+            result = ensure_no_empty_msg.after_model(state, self._make_runtime())
+
+        assert result is None
+
+    def test_omnia_failed_terminal_delivery_cannot_end_turn(self) -> None:
+        messages: list[AnyMessage] = [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "omnia_dm_reply",
+                        "args": {"message": "Blocked.", "terminal_outcome": "blocker"},
+                        "id": "terminal-1",
+                    }
+                ],
+            ),
+            ToolMessage(
+                content='{"success": false, "error": "callback failed"}',
+                tool_call_id="terminal-1",
+                name="omnia_dm_reply",
+            ),
+        ]
+
+        assert check_if_omnia_terminal_delivered(messages) is False
 
     def test_returns_none_when_only_user_messaged(self) -> None:
         empty_ai = AIMessage(content="")

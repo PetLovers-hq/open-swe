@@ -10,6 +10,7 @@ from ..input_messages import message_sender_id
 from ..utils.dashboard_handoff import DASHBOARD_HANDOFF_SENDER_ID
 
 _DASHBOARD_SOURCE = "dashboard"
+_OMNIA_SOURCE = "omnia"
 
 
 def get_every_message_since_last_human(state: AgentState) -> list[AnyMessage]:
@@ -46,6 +47,31 @@ def check_if_no_op(messages: list[AnyMessage]) -> bool:
     return False
 
 
+def check_if_omnia_terminal_delivered(messages: list[AnyMessage]) -> bool:
+    successful_tool_ids = {
+        msg.tool_call_id
+        for msg in messages
+        if isinstance(msg, ToolMessage)
+        and (
+            '"success": true' in str(msg.content).lower()
+            or "'success': true" in str(msg.content).lower()
+        )
+    }
+    for msg in messages:
+        if not isinstance(msg, AIMessage):
+            continue
+        for call in msg.tool_calls:
+            if call.get("name") != "omnia_dm_reply" or call.get("id") not in successful_tool_ids:
+                continue
+            args = call.get("args")
+            if isinstance(args, dict) and (
+                args.get("completion") is True
+                or args.get("terminal_outcome") in {"blocker", "failure"}
+            ):
+                return True
+    return False
+
+
 def _last_human_is_dashboard_handoff(state: AgentState) -> bool:
     for msg in reversed(state["messages"]):
         if msg.type == "human":
@@ -64,6 +90,30 @@ def _is_dashboard_source() -> bool:
     return configurable.get("source") == _DASHBOARD_SOURCE
 
 
+def _is_omnia_source() -> bool:
+    try:
+        config = get_config()
+    except RuntimeError:
+        return False
+    configurable = config.get("configurable", {})
+    return isinstance(configurable, dict) and configurable.get("source") == _OMNIA_SOURCE
+
+
+def _force_omnia_terminal(last_msg: AIMessage) -> dict[str, Any]:
+    tc_id = str(uuid4())
+    last_msg.tool_calls = [{"name": "confirming_completion", "args": {}, "id": tc_id}]
+    reminder = ToolMessage(
+        content=(
+            "This Omnia run cannot end yet. The current user turn has no successfully delivered "
+            "terminal omnia_dm_reply. Continue until you call it with completion=True, "
+            'terminal_outcome="blocker", or terminal_outcome="failure".'
+        ),
+        name="confirming_completion",
+        tool_call_id=tc_id,
+    )
+    return {"messages": [last_msg, reminder]}
+
+
 @after_model
 def ensure_no_empty_msg(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
     last_msg = state["messages"][-1]
@@ -73,6 +123,10 @@ def ensure_no_empty_msg(state: AgentState, runtime: Runtime) -> dict[str, Any] |
     has_tool_calls = bool(last_msg.tool_calls)
     if not has_tool_calls and not has_contents:
         messages_since_last_human = get_every_message_since_last_human(state)
+        if _is_omnia_source():
+            if not check_if_omnia_terminal_delivered(messages_since_last_human):
+                return _force_omnia_terminal(last_msg)
+            return None
         if check_if_no_op(messages_since_last_human):
             return None
 
@@ -92,6 +146,11 @@ def ensure_no_empty_msg(state: AgentState, runtime: Runtime) -> dict[str, Any] |
 
     if has_contents and not has_tool_calls:
         messages_since_last_human = get_every_message_since_last_human(state)
+
+        if _is_omnia_source():
+            if not check_if_omnia_terminal_delivered(messages_since_last_human):
+                return _force_omnia_terminal(last_msg)
+            return None
 
         if (
             check_if_model_messaged_user(messages_since_last_human)
