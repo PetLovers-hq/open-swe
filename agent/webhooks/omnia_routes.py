@@ -1,6 +1,7 @@
 """Signed Omnia DM trigger for Luna."""
 
 import os
+import re
 import uuid
 from typing import Any, cast
 
@@ -32,8 +33,32 @@ class OmniaDmEvent(BaseModel):
     journal_run_id: int | None = Field(default=None, gt=0)
 
 
-def _thread_id(dm_thread_id: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}"))
+_SCOPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("inventory", re.compile(r"\b(inventory|stock|sku|asin|fba|wfs|warehouse|freight|reorder)\b", re.I)),
+    ("finance", re.compile(r"\b(finance|accounting|invoice|bill|payment|p&l|profit|margin|cogs|settlement)\b", re.I)),
+    ("ads", re.compile(r"\b(ppc|advertis(?:e|ing)|campaign|keyword|bid|acos|roas)\b", re.I)),
+    ("research", re.compile(r"\b(research|competitor|market research|search the web|live internet)\b", re.I)),
+    ("operations", re.compile(r"\b(odoo|purchase order|supplier|shipment|fulfillment|operations)\b", re.I)),
+)
+
+
+def _scope_key(message: str) -> str:
+    """Return a conservative code-ownership lane for an Omnia request.
+
+    Unknown, cross-cutting, and product-shell work stays in ``app``. Only a
+    request with one unambiguous specialist domain receives a parallel lane;
+    messages that mention multiple domains fail safe to the shared app lane.
+    """
+    matches = [scope for scope, pattern in _SCOPE_PATTERNS if pattern.search(message)]
+    return matches[0] if len(matches) == 1 else "app"
+
+
+def _thread_id(dm_thread_id: str, message: str) -> str:
+    scope = _scope_key(message)
+    # Preserve the original app-lane identity so a deployment does not orphan
+    # an in-flight legacy run or its durable checkpoints.
+    suffix = f"/scope/{scope}" if scope != "app" else ""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}{suffix}"))
 
 
 def _repo(event: OmniaDmEvent) -> dict[str, str]:
@@ -107,7 +132,7 @@ async def _multimodal_content(
 
 
 async def process_omnia_dm(event: OmniaDmEvent) -> None:
-    thread_id = _thread_id(event.dm_thread_id)
+    thread_id = _thread_id(event.dm_thread_id, event.message)
     repo = _repo(event)
     model_id = os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-5.6-luna")
     effort = os.environ.get("OMNIA_AGENT_EFFORT", "high")
@@ -152,7 +177,11 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
             "source_context": source_context,
             "repo": repo,
             "event_id": event.event_id,
+            "omnia_scope": _scope_key(event.message),
         },
+        # A new request in the same ownership lane waits behind the current
+        # run. It must never interrupt and discard active work.
+        multitask_strategy="enqueue",
     )
 
 
@@ -175,10 +204,10 @@ async def omnia_webhook(request: Request, background_tasks: BackgroundTasks) -> 
             "status": "accepted",
             "dm_thread_id": event.dm_thread_id,
             "event_id": event.event_id,
-            "agent_thread_id": _thread_id(event.dm_thread_id),
+            "agent_thread_id": _thread_id(event.dm_thread_id, event.message),
         }
     )
-    return {"status": "accepted", "thread_id": _thread_id(event.dm_thread_id)}
+    return {"status": "accepted", "thread_id": _thread_id(event.dm_thread_id, event.message)}
 
 
 @router.get("/webhooks/omnia")
