@@ -1,5 +1,6 @@
 """Server-side Omnia DM transport."""
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -27,21 +28,28 @@ async def post_omnia_dm_event(payload: dict[str, Any]) -> tuple[bool, str | None
         return False, "Omnia callback is not configured"
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    try:
-        async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                content=body,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Omnia-Signature": f"sha256={signature}",
-                },
-            )
-        if response.is_success:
-            return True, None
-        return False, f"Omnia callback returned HTTP {response.status_code}"
-    except httpx.HTTPError as exc:
-        return False, f"Omnia callback failed: {exc.__class__.__name__}"
+    error = "Omnia callback failed"
+    for attempt, delay in enumerate((0.5, 1.0, 2.0, 4.0, 0.0), start=1):
+        try:
+            async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as client:
+                response = await client.post(
+                    url,
+                    content=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Omnia-Signature": f"sha256={signature}",
+                    },
+                )
+            if response.is_success:
+                return True, None
+            error = f"Omnia callback returned HTTP {response.status_code}"
+            if response.status_code < 500 and response.status_code != 429:
+                return False, error
+        except httpx.HTTPError as exc:
+            error = f"Omnia callback failed: {exc.__class__.__name__}"
+        if attempt < 5:
+            await asyncio.sleep(delay)
+    return False, f"{error} after 5 attempts"
 
 
 async def post_omnia_agent_action(payload: dict[str, Any]) -> dict[str, Any]:
