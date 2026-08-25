@@ -41,6 +41,11 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
         "Threaded replies now open beside the conversation.",
         screenshot_path="evidence/threaded-replies.png",
         completion=True,
+        task_number=7,
+        commit_sha="a" * 40,
+        preview_url="https://omnia-test.vercel.app/chat",
+        authenticated=True,
+        passed_checks=["focused tests", "build"],
     )
 
     assert result == {"success": True}
@@ -55,6 +60,8 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
         }
     ]
     assert "github" not in payload["message"].lower()
+    assert payload["purpose"] == "review"
+    assert payload["evidence"]["task_number"] == 7
 
 
 @pytest.mark.asyncio

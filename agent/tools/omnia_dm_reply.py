@@ -47,6 +47,11 @@ async def omnia_dm_reply(
     message: str,
     screenshot_path: str | None = None,
     completion: bool = False,
+    task_number: int | None = None,
+    commit_sha: str | None = None,
+    preview_url: str | None = None,
+    authenticated: bool = False,
+    passed_checks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Send a human-readable update to Luna's Omnia DM.
 
@@ -60,6 +65,19 @@ async def omnia_dm_reply(
         return {
             "success": False,
             "error": "A successful coding completion requires a real PNG screenshot_path",
+        }
+    if completion and (
+        not isinstance(task_number, int)
+        or not isinstance(commit_sha, str)
+        or len(commit_sha) != 40
+        or not isinstance(preview_url, str)
+        or not preview_url.startswith("https://")
+        or authenticated is not True
+        or len(passed_checks or []) < 2
+    ):
+        return {
+            "success": False,
+            "error": "Completion requires task, exact commit, ready preview, authenticated browser proof, and at least two passed checks",
         }
     config: Mapping[str, Any] = get_config()
     configurable = config.get("configurable", {})
@@ -78,8 +96,7 @@ async def omnia_dm_reply(
             attachments.append(await _native_png(screenshot_path))
         except ValueError as exc:
             return {"success": False, "error": str(exc)}
-    success, error = await post_omnia_dm_event(
-        {
+    payload: dict[str, Any] = {
             "kind": "message",
             "dm_thread_id": thread_id,
             "message": message.strip(),
@@ -87,6 +104,15 @@ async def omnia_dm_reply(
             "run_id": str(run_id) if run_id else None,
             "journal_run_id": omnia_thread.get("journal_run_id"),
             "attachments": attachments,
+            "purpose": "review" if completion else "progress",
         }
-    )
+    if completion:
+        payload["evidence"] = {
+            "task_number": task_number,
+            "commit_sha": commit_sha,
+            "preview_url": preview_url,
+            "authenticated": True,
+            "checks": [{"name": name, "passed": True} for name in passed_checks or []],
+        }
+    success, error = await post_omnia_dm_event(payload)
     return {"success": success, **({"error": error} if error else {})}
