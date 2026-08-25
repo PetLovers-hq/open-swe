@@ -50,7 +50,7 @@ async def omnia_dm_reply(
     task_number: int | None = None,
     commit_sha: str | None = None,
     preview_url: str | None = None,
-    authenticated: bool = False,
+    auth_receipt: str | None = None,
     passed_checks: list[str] | None = None,
 ) -> dict[str, Any]:
     """Send a human-readable update to Luna's Omnia DM.
@@ -72,12 +72,13 @@ async def omnia_dm_reply(
         or len(commit_sha) != 40
         or not isinstance(preview_url, str)
         or not preview_url.startswith("https://")
-        or authenticated is not True
+        or not isinstance(auth_receipt, str)
+        or len(auth_receipt) != 36
         or len(passed_checks or []) < 2
     ):
         return {
             "success": False,
-            "error": "Completion requires task, exact commit, ready preview, authenticated browser proof, and at least two passed checks",
+            "error": "Completion requires task, exact commit, ready preview, authenticated visual-proof receipt, and at least two passed checks",
         }
     config: Mapping[str, Any] = get_config()
     configurable = config.get("configurable", {})
@@ -111,7 +112,7 @@ async def omnia_dm_reply(
             "task_number": task_number,
             "commit_sha": commit_sha,
             "preview_url": preview_url,
-            "authenticated": True,
+            "auth_receipt": auth_receipt,
             "checks": [{"name": name, "passed": True} for name in passed_checks or []],
         }
     success, error = await post_omnia_dm_event(payload)
