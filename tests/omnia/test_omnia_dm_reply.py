@@ -44,7 +44,7 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
         task_number=7,
         commit_sha="a" * 40,
         preview_url="https://omnia-test.vercel.app/chat",
-        authenticated=True,
+        auth_receipt="11111111-1111-4111-8111-111111111111",
         passed_checks=["focused tests", "build"],
     )
 
@@ -62,6 +62,7 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
     assert "github" not in payload["message"].lower()
     assert payload["purpose"] == "review"
     assert payload["evidence"]["task_number"] == 7
+    assert payload["evidence"]["auth_receipt"] == "11111111-1111-4111-8111-111111111111"
 
 
 @pytest.mark.asyncio
@@ -107,3 +108,4 @@ def test_omnia_prompt_hides_developer_plumbing_and_requires_native_png() -> None
     assert "completion=True" in guidance
     assert "native previewable attachment" in guidance
     assert "Smithbox" in guidance
+    assert "Confirm this visual proof" in guidance
