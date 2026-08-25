@@ -29,16 +29,21 @@ operate on the same live page. Always finish with ``browser_close``.
 """
 
 import asyncio
+import base64
 import contextlib
 import inspect
 import json
 import logging
 import os
+import posixpath
+import shlex
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from langgraph.config import get_config
 
+from ..utils.sandbox_paths import aresolve_sandbox_work_dir
+from ..utils.sandbox_state import get_sandbox_backend
 from ..utils.url_safety import is_url_safe
 
 logger = logging.getLogger(__name__)
@@ -543,6 +548,25 @@ class _CDPBrowserURLGuard:
             return self._task.exception() or RuntimeError("CDP URL guard stopped")
         return None
 
+    async def capture_png(self) -> bytes:
+        """Capture the active protected page through the existing CDP session."""
+        await self._wait_for_configuration_tasks()
+        self._raise_if_failed()
+        if not self._attached_sessions:
+            raise RuntimeError("no protected page target is available")
+        result = await self._send(
+            "Page.captureScreenshot",
+            {"format": "png", "captureBeyondViewport": False},
+            session_id=next(iter(self._attached_sessions)),
+        )
+        encoded = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(encoded, str) or not encoded:
+            raise RuntimeError("browser did not return PNG data")
+        data = base64.b64decode(encoded, validate=True)
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError("browser screenshot was not PNG data")
+        return data
+
     async def _handle_paused_request(self, session_id: str, params: dict[str, Any]) -> None:
         request_id = params.get("requestId")
         request = params.get("request")
@@ -825,6 +849,43 @@ async def browser_extract(instruction: str, schema: dict[str, Any] | None = None
         return {"success": False, "error": f"browser_extract failed: {e!s}"}
 
 
+async def browser_screenshot(file_name: str = "luna-review.png") -> dict[str, Any]:
+    """Capture the authenticated page as PNG and place it in the coding sandbox.
+
+    The returned ``file_path`` is directly consumable by ``omnia_dm_reply``'s
+    ``screenshot_path`` argument; no temporary download URL or base64 handoff is
+    needed.
+    """
+    try:
+        session = await _get_session(create=False)
+        if session is None:
+            return {"success": False, "error": "No active browser. Call browser_navigate first."}
+        await _prepare_browser_operation(session, "browser_screenshot")
+        cdp_guard = _safe_attr(session, "_open_swe_cdp_guard")
+        capture_png = _callable_attr(cdp_guard, "capture_png") if cdp_guard is not None else None
+        if capture_png is None:
+            return {"success": False, "error": "Browser screenshot transport is unavailable"}
+        png = await _maybe_await(capture_png())
+        safe_name = posixpath.basename(file_name.strip()) if isinstance(file_name, str) else ""
+        if not safe_name.lower().endswith(".png"):
+            safe_name = "luna-review.png"
+        backend = await get_sandbox_backend(_thread_id())
+        work_dir = posixpath.normpath(await aresolve_sandbox_work_dir(backend))
+        evidence_dir = posixpath.join(work_dir, ".luna-evidence")
+        created = await backend.aexecute(f"mkdir -p -- {shlex.quote(evidence_dir)}")
+        if created.exit_code != 0:
+            raise RuntimeError("could not create browser evidence directory")
+        file_path = posixpath.join(evidence_dir, safe_name)
+        uploaded = await backend.aupload_files([(file_path, png)])
+        if not uploaded:
+            raise RuntimeError("could not store browser evidence in the coding sandbox")
+        return {"success": True, "file_path": file_path, "bytes": len(png)}
+    except BrowserNavigationBlocked as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"success": False, "error": f"browser_screenshot failed: {e!s}"}
+
+
 async def browser_close() -> dict[str, Any]:
     """Close the current browser session and release its resources.
 
@@ -898,5 +959,6 @@ def load_browser_tools() -> list[Any]:
         browser_act,
         browser_observe,
         browser_extract,
+        browser_screenshot,
         browser_close,
     ]
