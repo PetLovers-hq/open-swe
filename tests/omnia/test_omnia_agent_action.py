@@ -50,4 +50,38 @@ async def test_omnia_agent_action_validates_mutating_inputs(
 
     assert (await omnia_agent_action("create_task"))["success"] is False
     assert (await omnia_agent_action("merge_task"))["success"] is False
+    assert (await omnia_agent_action("browser_session"))["success"] is False
     post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_omnia_agent_action_requests_a_preview_browser_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = __import__("agent.tools.omnia_agent_action", fromlist=["omnia_agent_action"])
+    monkeypatch.setattr(
+        module,
+        "get_config",
+        lambda: {
+            "run_id": "run-9",
+            "configurable": {
+                "thread_id": "agent-thread-9",
+                "user_email": "kyle@example.com",
+                "omnia_thread": {"thread_id": "dm-kyle-luna"},
+            },
+        },
+    )
+    post = AsyncMock(return_value={"success": True, "browser_session_url": "https://preview/session"})
+    monkeypatch.setattr(module, "post_omnia_agent_action", post)
+
+    result = await omnia_agent_action(
+        "browser_session",
+        preview_url="https://omnia-preview.vercel.app/chat",
+        redirect_path="/chat",
+    )
+
+    assert result["success"] is True
+    payload = post.await_args.args[0]
+    assert payload["preview_url"] == "https://omnia-preview.vercel.app/chat"
+    assert payload["redirect_path"] == "/chat"
+    assert payload["sender_email"] == "kyle@example.com"
