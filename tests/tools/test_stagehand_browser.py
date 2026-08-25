@@ -71,6 +71,19 @@ def test_explicit_stagehand_model_still_wins(monkeypatch: pytest.MonkeyPatch) ->
     assert stagehand_browser._model_name() == "openai/gpt-5"
 
 
+def test_local_browser_accepts_stagehand_launcher_chrome_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(stagehand_browser, "_is_local", lambda: True)
+    monkeypatch.delenv("STAGEHAND_LOCAL_CHROME_PATH", raising=False)
+    monkeypatch.setenv("CHROME_PATH", "/usr/bin/chromium")
+
+    assert stagehand_browser._browser_spec() == {
+        "type": "local",
+        "launch_options": {"headless": True, "executable_path": "/usr/bin/chromium"},
+    }
+
+
 @pytest.mark.asyncio
 async def test_browser_screenshot_writes_real_png_into_sandbox(
     monkeypatch: pytest.MonkeyPatch,
