@@ -106,6 +106,7 @@ async def omnia_dm_reply(
         "message": message.strip(),
         "agent_thread_id": configurable.get("thread_id"),
         "run_id": str(run_id) if run_id else None,
+        "event_id": omnia_thread.get("event_id"),
         "journal_run_id": omnia_thread.get("journal_run_id"),
         "attachments": attachments,
         "purpose": "review"
