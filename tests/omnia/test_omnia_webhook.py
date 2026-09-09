@@ -74,7 +74,7 @@ async def test_omnia_webhook_rejects_bad_signature(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_process_omnia_dm_uses_luna_and_durable_dispatch(
+async def test_process_omnia_dm_uses_astra_and_durable_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     upsert = AsyncMock()
@@ -89,7 +89,7 @@ async def test_process_omnia_dm_uses_luna_and_durable_dispatch(
     assert await_args is not None
     configurable = await_args.args[2]
     assert configurable["source"] == "omnia"
-    assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
+    assert configurable["agent_model_id"] == "openai:gpt-6-astra"
     assert configurable["agent_effort"] == "high"
     assert await_args.kwargs["source"] == "omnia"
     assert await_args.kwargs["multitask_strategy"] == "enqueue"
@@ -210,7 +210,10 @@ async def test_process_omnia_dm_preserves_multiple_screenshot_order(
         ("image/png", None, "could not be loaded"),
         (
             "image/png",
-            {"type": "text", "text": "An attached image was skipped because it exceeded the limit."},
+            {
+                "type": "text",
+                "text": "An attached image was skipped because it exceeded the limit.",
+            },
             "exceeded the limit",
         ),
         ("image/svg+xml", None, "is unsupported"),
