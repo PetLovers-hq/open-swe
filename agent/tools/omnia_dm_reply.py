@@ -59,6 +59,13 @@ async def omnia_dm_reply(
     For every successful coding completion, screenshot_path is required and must point to a real
     PNG captured from the working product. Omnia stores it as a native, previewable chat attachment.
     Never substitute an SVG, mockup, GitHub link, or sandbox download URL.
+    The PNG must be the exact saved bytes hashed for auth_receipt. A different
+    capture of the same screen is not interchangeable. If Omnia rejects the
+    receipt, save a fresh capture, register its hash in the authenticated browser,
+    and retry with that exact file and new receipt. Never make the user repair it.
+    To show multiple screenshots, register a separate receipt for each exact PNG
+    and send a separate gated review for each. Each review must use the same
+    current task commit and preview; a receipt cannot cover a different image.
     """
     if not message.strip():
         return {"success": False, "error": "Message cannot be empty"}
