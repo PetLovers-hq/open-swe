@@ -34,11 +34,25 @@ class OmniaDmEvent(BaseModel):
 
 
 _SCOPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("inventory", re.compile(r"\b(inventory|stock|sku|asin|fba|wfs|warehouse|freight|reorder)\b", re.I)),
-    ("finance", re.compile(r"\b(finance|accounting|invoice|bill|payment|p&l|profit|margin|cogs|settlement)\b", re.I)),
+    (
+        "inventory",
+        re.compile(r"\b(inventory|stock|sku|asin|fba|wfs|warehouse|freight|reorder)\b", re.I),
+    ),
+    (
+        "finance",
+        re.compile(
+            r"\b(finance|accounting|invoice|bill|payment|p&l|profit|margin|cogs|settlement)\b", re.I
+        ),
+    ),
     ("ads", re.compile(r"\b(ppc|advertis(?:e|ing)|campaign|keyword|bid|acos|roas)\b", re.I)),
-    ("research", re.compile(r"\b(research|competitor|market research|search the web|live internet)\b", re.I)),
-    ("operations", re.compile(r"\b(odoo|purchase order|supplier|shipment|fulfillment|operations)\b", re.I)),
+    (
+        "research",
+        re.compile(r"\b(research|competitor|market research|search the web|live internet)\b", re.I),
+    ),
+    (
+        "operations",
+        re.compile(r"\b(odoo|purchase order|supplier|shipment|fulfillment|operations)\b", re.I),
+    ),
 )
 
 
@@ -61,7 +75,9 @@ def _thread_id(dm_thread_id: str, message: str) -> str:
     suffix = f"/scope/{scope}" if scope != "app" else ""
     if epoch:
         suffix += f"/runtime/{epoch}"
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}{suffix}"))
+    return str(
+        uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}{suffix}")
+    )
 
 
 def _repo(event: OmniaDmEvent) -> dict[str, str]:
@@ -137,7 +153,7 @@ async def _multimodal_content(
 async def process_omnia_dm(event: OmniaDmEvent) -> None:
     thread_id = _thread_id(event.dm_thread_id, event.message)
     repo = _repo(event)
-    model_id = os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-5.6-luna")
+    model_id = os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-6-astra")
     effort = os.environ.get("OMNIA_AGENT_EFFORT", "high")
     content, model_id, effort = await _multimodal_content(event, model_id, effort)
     omnia_thread: dict[str, Any] = {

@@ -58,6 +58,8 @@ async def omnia_dm_reply(
 
     For every successful coding completion, screenshot_path is required and must point to a real
     PNG captured from the working product. Omnia stores it as a native, previewable chat attachment.
+    Open the exact PNG with read_file and visually inspect it before sending.
+    Only claim states visible in that image; after rejection capture a new image.
     Never substitute an SVG, mockup, GitHub link, or sandbox download URL.
     The PNG must be the exact saved bytes hashed for auth_receipt. A different
     capture of the same screen is not interchangeable. If Omnia rejects the

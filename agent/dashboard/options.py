@@ -59,6 +59,13 @@ SUPPORTED_MODELS: list[ModelOption] = [
         "supports_images": True,
     },
     {
+        "id": "openai:gpt-6-astra",
+        "label": "GPT-6 Astra",
+        "efforts": ["low", "medium", "high", "xhigh", "max"],
+        "default_effort": "high",
+        "supports_images": True,
+    },
+    {
         "id": "google_genai:gemini-3.7-flash",
         "label": "Gemini 3.7 Flash",
         "efforts": ["minimal", "low", "medium", "high"],
@@ -125,6 +132,7 @@ _PROFILE_LOADER_MODULES: dict[str, str] = {
     "openai": "langchain_openai.chat_models.base",
 }
 CODEX_CONTEXT_WINDOW_OVERRIDES: dict[str, int] = {
+    "openai:gpt-6-astra": 1_050_000,
     "openai:gpt-5.6-sol": 272_000,
     "openai:gpt-5.6-terra": 272_000,
     "openai:gpt-5.6-luna": 272_000,
