@@ -43,6 +43,14 @@ async def post_omnia_dm_event(payload: dict[str, Any]) -> tuple[bool, str | None
             if response.is_success:
                 return True, None
             error = f"Omnia callback returned HTTP {response.status_code}"
+            # Contract rejections contain the exact repair instructions. Hiding
+            # them behind the status code strands a recoverable review forever.
+            try:
+                detail = response.json()
+            except ValueError:
+                detail = None
+            if isinstance(detail, dict) and isinstance(detail.get("error"), str):
+                error += f": {detail['error'][:2000]}"
             if response.status_code < 500 and response.status_code != 429:
                 return False, error
         except httpx.HTTPError as exc:
