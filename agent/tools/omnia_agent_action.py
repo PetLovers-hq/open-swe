@@ -21,7 +21,8 @@ async def omnia_agent_action(
 
     Use create_task only when the human clearly hands Luna new coding work. Use merge_task
     only after a clear approval for that exact task in this Omnia conversation. Use
-    browser_session only for the exact Vercel preview being visually verified.
+    browser_session with task_number to resolve and authenticate the current task preview.
+    Do not guess deployment URLs. Use returned preview_origin and commit_sha for proof.
     """
     config = get_config()
     configurable = config.get("configurable", {})
@@ -35,9 +36,13 @@ async def omnia_agent_action(
     if action == "merge_task" and not isinstance(task_number, int):
         return {"success": False, "error": "task_number is required for merge_task"}
     if action == "browser_session" and not (
-        isinstance(preview_url, str) and preview_url.startswith("https://")
+        isinstance(task_number, int)
+        or (isinstance(preview_url, str) and preview_url.startswith("https://"))
     ):
-        return {"success": False, "error": "preview_url is required for browser_session"}
+        return {
+            "success": False,
+            "error": "task_number is required to resolve browser_session (legacy preview_url is also accepted)",
+        }
     run_id = config.get("run_id") or configurable.get("run_id") or "unknown-run"
     fingerprint = hashlib.sha256(
         json.dumps(

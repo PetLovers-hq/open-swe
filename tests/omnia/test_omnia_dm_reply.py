@@ -1,4 +1,5 @@
 import base64
+from typing import Literal
 from unittest.mock import AsyncMock
 
 import pytest
@@ -113,7 +114,7 @@ async def test_coding_completion_requires_png(monkeypatch: pytest.MonkeyPatch) -
 )
 async def test_omnia_reply_can_send_terminal_non_review_outcome(
     monkeypatch: pytest.MonkeyPatch,
-    terminal_outcome: str,
+    terminal_outcome: Literal["blocker", "failure"],
     purpose: str,
     terminal_status: str | None,
 ) -> None:
@@ -128,6 +129,7 @@ async def test_omnia_reply_can_send_terminal_non_review_outcome(
     )
 
     assert result == {"success": True}
+    assert post.await_args is not None
     payload = post.await_args.args[0]
     assert payload["purpose"] == purpose
     assert payload.get("terminal_status") == terminal_status
