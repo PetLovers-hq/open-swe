@@ -19,6 +19,10 @@ async def omnia_agent_action(
 ) -> dict[str, Any]:
     """Read/create Omnia tasks or execute an explicitly approved merge.
 
+    For an approved release, call merge_task even if GitHub already shows the
+    task merged: it verifies the approved head and restores the live DM handoff.
+    A release needs no new post-deployment screenshot. Follow next_action.
+
     Use omnia_capture_view for preview screenshots. The legacy browser_session
     action returns a migration instruction and never exposes a one-use launcher.
     """
@@ -75,7 +79,10 @@ async def _execute_omnia_agent_action(
             sort_keys=True,
         ).encode()
     ).hexdigest()[:24]
-    if action == "browser_session":
+    if action in {"browser_session", "merge_task"}:
+        # A new merge attempt must not replay a failed request forever. Omnia
+        # revalidates approval and recovers an already merged exact head. The
+        # same payload key remains stable inside transport-level retries.
         fingerprint = uuid.uuid4().hex
     result = await post_omnia_agent_action(
         {
