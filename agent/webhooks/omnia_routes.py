@@ -115,9 +115,6 @@ async def _multimodal_content(
     if not images:
         return text, model_id, effort
 
-    if not common.model_supports_images(model_id):
-        model_id, effort = common.default_vision_model_pair()
-
     blocks: list[dict[str, Any]] = [cast(dict[str, Any], create_text_block(text))]
     async with httpx.AsyncClient(timeout=common.DEFAULT_HTTP_TIMEOUT) as client:
         for attachment in images:
@@ -153,8 +150,8 @@ async def _multimodal_content(
 async def process_omnia_dm(event: OmniaDmEvent) -> None:
     thread_id = _thread_id(event.dm_thread_id, event.message)
     repo = _repo(event)
-    model_id = os.environ.get("OMNIA_AGENT_MODEL", "openai:gpt-6-astra")
-    effort = os.environ.get("OMNIA_AGENT_EFFORT", "high")
+    model_id = "openai:gpt-5.6-luna"
+    effort = "high"
     content, model_id, effort = await _multimodal_content(event, model_id, effort)
     omnia_thread: dict[str, Any] = {
         "thread_id": event.dm_thread_id,

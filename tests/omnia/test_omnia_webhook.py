@@ -74,9 +74,11 @@ async def test_omnia_webhook_rejects_bad_signature(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_process_omnia_dm_uses_astra_and_durable_dispatch(
+async def test_process_omnia_dm_pins_luna_despite_environment_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("OMNIA_AGENT_MODEL", "openai:gpt-6-astra")
+    monkeypatch.setenv("OMNIA_AGENT_EFFORT", "low")
     upsert = AsyncMock()
     dispatch = AsyncMock()
     monkeypatch.setattr(omnia_routes.common, "upsert_agent_thread_owner_metadata", upsert)
@@ -89,7 +91,7 @@ async def test_process_omnia_dm_uses_astra_and_durable_dispatch(
     assert await_args is not None
     configurable = await_args.args[2]
     assert configurable["source"] == "omnia"
-    assert configurable["agent_model_id"] == "openai:gpt-6-astra"
+    assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
     assert configurable["agent_effort"] == "high"
     assert await_args.kwargs["source"] == "omnia"
     assert await_args.kwargs["multitask_strategy"] == "enqueue"
@@ -250,7 +252,7 @@ async def test_process_omnia_dm_reports_unavailable_screenshot(
 
 
 @pytest.mark.asyncio
-async def test_process_omnia_dm_uses_vision_fallback_for_text_only_override(
+async def test_process_omnia_dm_does_not_switch_models_for_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dispatch = AsyncMock()
@@ -260,7 +262,7 @@ async def test_process_omnia_dm_uses_vision_fallback_for_text_only_override(
     monkeypatch.setattr(
         omnia_routes.common,
         "default_vision_model_pair",
-        lambda: ("openai:gpt-5.6-luna", "high"),
+        lambda: ("openai:gpt-6-astra", "high"),
     )
     monkeypatch.setattr(omnia_routes.common, "upsert_agent_thread_owner_metadata", AsyncMock())
     monkeypatch.setattr(
