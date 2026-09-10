@@ -151,3 +151,63 @@ async def test_non_omnia_context_cannot_capture(capture):
     result = await module.omnia_capture_view(30, "docs", ["Last edited"])
     assert result["success"] is False
     assert events == []
+
+
+async def test_pending_preview_waits_and_captures_without_model_retry(capture, monkeypatch):
+    backend, events, _, _ = capture
+    original = module._execute_omnia_agent_action.side_effect
+    pending = {
+        "success": False,
+        "error": "The current task commit does not have a ready preview yet. Wait for its build and retry browser_session; do not ask the user to resolve a deployment URL.",
+    }
+    calls = 0
+
+    async def session(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            return pending
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(module, "_execute_omnia_agent_action", AsyncMock(side_effect=session))
+    sleep = AsyncMock()
+    monkeypatch.setattr(module.asyncio, "sleep", sleep)
+    result = await module.omnia_capture_view(30, "docs", ["Last edited"])
+    assert result["success"] is True
+    assert calls == 3
+    assert sleep.await_count == 2
+    assert events == ["stage", "write", "session", "capture"]
+    assert backend.aexecute.await_count == 2
+
+
+async def test_preview_wait_is_bounded_and_does_not_capture(capture, monkeypatch):
+    backend, events, _, _ = capture
+    request = AsyncMock(
+        return_value={
+            "success": False,
+            "error": "The current task commit does not have a ready preview yet.",
+        }
+    )
+    monkeypatch.setattr(module, "_execute_omnia_agent_action", request)
+    sleep = AsyncMock()
+    monkeypatch.setattr(module.asyncio, "sleep", sleep)
+    result = await module.omnia_capture_view(30, "docs", ["Last edited"])
+    assert result["success"] is False
+    assert "ten minutes" in result["error"]
+    assert request.await_count == 31
+    assert sleep.await_count == 30
+    assert events == ["stage", "write"]
+    assert backend.aexecute.await_count == 1
+
+
+async def test_authentication_error_is_not_retried_as_pending_build(capture, monkeypatch):
+    _, events, _, _ = capture
+    request = AsyncMock(return_value={"success": False, "error": "Unauthorized conversation"})
+    monkeypatch.setattr(module, "_execute_omnia_agent_action", request)
+    sleep = AsyncMock()
+    monkeypatch.setattr(module.asyncio, "sleep", sleep)
+    result = await module.omnia_capture_view(30, "docs", ["Last edited"])
+    assert result == {"success": False, "error": "Unauthorized conversation"}
+    request.assert_awaited_once()
+    sleep.assert_not_awaited()
+    assert events == ["stage", "write"]

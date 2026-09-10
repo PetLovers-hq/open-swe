@@ -1,5 +1,6 @@
 """Capture authenticated Omnia review evidence in the durable coding sandbox."""
 
+import asyncio
 import hashlib
 import json
 import posixpath
@@ -22,6 +23,23 @@ class CaptureStep(TypedDict):
     within: NotRequired[str]
 
 
+async def _ready_preview_session(task_number: int, path: str) -> dict[str, Any]:
+    for attempt in range(31):
+        session = await _execute_omnia_agent_action(
+            "browser_session", task_number=task_number, redirect_path=path
+        )
+        if session.get("success") or not str(session.get("error", "")).startswith(
+            "The current task commit does not have a ready preview yet."
+        ):
+            return session
+        if attempt < 30:
+            await asyncio.sleep(20)
+    return {
+        "success": False,
+        "error": "The preview still is not ready after ten minutes. Inspect its build status and repair any failure before capturing again. Do not ask the user to resolve deployment details.",
+    }
+
+
 async def omnia_capture_view(
     task_number: int,
     name: str,
@@ -33,7 +51,8 @@ async def omnia_capture_view(
 ) -> dict[str, Any]:
     """Capture one real preview PNG and its fresh authenticated receipt.
 
-    Handles current-driver staging, one-use browser authentication, navigation,
+    Handles current-driver staging and automatic waiting for pending preview builds,
+    one-use browser authentication, navigation,
     screenshot hashing, and receipt registration. Do not run proof scripts manually.
     Use one call per requested view, then read_file each returned screenshot_path
     and send all views together through omnia_dm_reply screenshots.
@@ -135,9 +154,7 @@ async def omnia_capture_view(
             return {"success": False, "error": "Could not write capture view configuration"}
         # Mint only after staging and configuration finish. No model turn occurs
         # between receiving the one-use launcher and consuming it.
-        session = await _execute_omnia_agent_action(
-            "browser_session", task_number=task_number, redirect_path=path
-        )
+        session = await _ready_preview_session(task_number, path)
         if not session.get("success"):
             return session
         bootstrap_url = session["browser_session_url"]
