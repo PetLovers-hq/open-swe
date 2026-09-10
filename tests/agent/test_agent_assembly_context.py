@@ -474,9 +474,13 @@ async def test_general_purpose_subagent_cannot_use_slack_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_omnia_model_lock_overrides_stored_profile_and_fallback(monkeypatch):
+async def test_omnia_model_lock_overrides_stored_profile_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _base_config()
-    config["configurable"].update(
+    configurable = config.get("configurable")
+    assert isinstance(configurable, dict)
+    configurable.update(
         {
             "source": "omnia",
             "agent_model_id": "openai:gpt-6-astra",
@@ -494,5 +498,7 @@ async def test_omnia_model_lock_overrides_stored_profile_and_fallback(monkeypatc
     assert all(
         call.kwargs.get("reasoning", {}).get("effort") == "high" for call in make.call_args_list
     )
-    assert config["configurable"]["agent_model_id"] == "openai:gpt-5.6-luna"
-    assert not any(type(m).__name__ == "ModelFallbackMiddleware" for m in captured["middleware"])
+    assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
+    middleware = captured["middleware"]
+    assert isinstance(middleware, list)
+    assert not any(type(m).__name__ == "ModelFallbackMiddleware" for m in middleware)
