@@ -146,3 +146,99 @@ def test_omnia_prompt_hides_developer_plumbing_and_requires_native_png() -> None
     assert "Confirm this visual proof" in guidance
     assert 'terminal_outcome="blocker"' in guidance
     assert 'terminal_outcome="failure"' in guidance
+
+
+@pytest.mark.asyncio
+async def test_multiple_screenshots_are_delivered_in_one_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = __import__("agent.tools.omnia_dm_reply", fromlist=["omnia_dm_reply"])
+    monkeypatch.setattr(module, "get_config", _config)
+    native = AsyncMock(
+        side_effect=[
+            {
+                "name": "desktop.png",
+                "mime": "image/png",
+                "data_base64": base64.b64encode(b"desktop").decode(),
+            },
+            {
+                "name": "phone.png",
+                "mime": "image/png",
+                "data_base64": base64.b64encode(b"phone").decode(),
+            },
+        ]
+    )
+    monkeypatch.setattr(module, "_native_png", native)
+    post = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(module, "post_omnia_dm_event", post)
+    result = await omnia_dm_reply(
+        "Here are both screenshots. Do these look correct?",
+        completion=True,
+        task_number=22,
+        commit_sha="a" * 40,
+        preview_url="https://omnia-preview.vercel.app",
+        passed_checks=["tests", "build"],
+        screenshots=[
+            {
+                "screenshot_path": "/desktop.png",
+                "auth_receipt": "11111111-1111-4111-8111-111111111111",
+            },
+            {
+                "screenshot_path": "/phone.png",
+                "auth_receipt": "22222222-2222-4222-8222-222222222222",
+            },
+        ],
+    )
+    assert result == {"success": True}
+    post.assert_awaited_once()
+    assert post.await_args is not None
+    payload = post.await_args.args[0]
+    assert [item["name"] for item in payload["attachments"]] == ["desktop.png", "phone.png"]
+    assert len({item["auth_receipt"] for item in payload["attachments"]}) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["unreadable", "oversized", "duplicate"])
+async def test_multi_image_failure_never_posts_a_partial_review(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    module = __import__("agent.tools.omnia_dm_reply", fromlist=["omnia_dm_reply"])
+    monkeypatch.setattr(module, "get_config", _config)
+    image = {
+        "name": "image.png",
+        "mime": "image/png",
+        "data_base64": base64.b64encode(
+            b"x" * (2 * 1024 * 1024 if failure == "oversized" else 20)
+        ).decode(),
+    }
+    native = AsyncMock(
+        side_effect=[
+            image.copy(),
+            ValueError("unreadable PNG") if failure == "unreadable" else image.copy(),
+        ]
+    )
+    monkeypatch.setattr(module, "_native_png", native)
+    post = AsyncMock()
+    monkeypatch.setattr(module, "post_omnia_dm_event", post)
+    result = await omnia_dm_reply(
+        "Both screenshots.",
+        completion=True,
+        task_number=22,
+        commit_sha="a" * 40,
+        preview_url="https://omnia-preview.vercel.app",
+        passed_checks=["tests", "build"],
+        screenshots=[
+            {
+                "screenshot_path": "/desktop.png",
+                "auth_receipt": "11111111-1111-4111-8111-111111111111",
+            },
+            {
+                "screenshot_path": "/phone.png",
+                "auth_receipt": "11111111-1111-4111-8111-111111111111"
+                if failure == "duplicate"
+                else "22222222-2222-4222-8222-222222222222",
+            },
+        ],
+    )
+    assert result["success"] is False
+    post.assert_not_awaited()
