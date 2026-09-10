@@ -168,3 +168,43 @@ async def test_legacy_browser_tool_redirects_without_minting_session(monkeypatch
     assert "omnia_capture_view" in result["error"]
     assert "browser_session_url" not in result
     post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_new_merge_attempt_revalidates_instead_of_replaying_failed_action(monkeypatch):
+    module = __import__("agent.tools.omnia_agent_action", fromlist=["omnia_agent_action"])
+    monkeypatch.setattr(
+        module,
+        "get_config",
+        lambda: {
+            "run_id": "runtime-1",
+            "configurable": {"omnia_thread": {"thread_id": "dm-1"}},
+        },
+    )
+    post = AsyncMock(
+        side_effect=[{"success": False, "error": "temporary refusal"}, {"success": True}]
+    )
+    monkeypatch.setattr(module, "post_omnia_agent_action", post)
+    assert (await omnia_agent_action("merge_task", task_number=30))["success"] is False
+    assert (await omnia_agent_action("merge_task", task_number=30))["success"] is True
+    keys = [call.args[0]["idempotency_key"] for call in post.await_args_list]
+    assert keys[0] != keys[1]
+
+
+@pytest.mark.asyncio
+async def test_create_task_keeps_its_duplicate_protection(monkeypatch):
+    module = __import__("agent.tools.omnia_agent_action", fromlist=["omnia_agent_action"])
+    monkeypatch.setattr(
+        module,
+        "get_config",
+        lambda: {
+            "run_id": "runtime-1",
+            "configurable": {"omnia_thread": {"thread_id": "dm-1"}},
+        },
+    )
+    post = AsyncMock(return_value={"success": True})
+    monkeypatch.setattr(module, "post_omnia_agent_action", post)
+    await omnia_agent_action("create_task", title="Fix chat")
+    await omnia_agent_action("create_task", title="Fix chat")
+    keys = [call.args[0]["idempotency_key"] for call in post.await_args_list]
+    assert keys[0] == keys[1]
