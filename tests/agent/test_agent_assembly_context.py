@@ -471,3 +471,28 @@ async def test_general_purpose_subagent_cannot_use_slack_tools() -> None:
     assert parent_only_names <= parent_names
     assert parent_only_names.isdisjoint(subagent_names)
     assert subagent_names == parent_names - parent_only_names
+
+
+@pytest.mark.asyncio
+async def test_omnia_model_lock_overrides_stored_profile_and_fallback(monkeypatch):
+    config = _base_config()
+    config["configurable"].update(
+        {
+            "source": "omnia",
+            "agent_model_id": "openai:gpt-6-astra",
+            "agent_effort": "low",
+        }
+    )
+    monkeypatch.setenv("LLM_FALLBACK_MODEL_ID", "openai:gpt-6-astra")
+    with patch("agent.server._make_model_or_defer", return_value=MagicMock()) as make:
+        captured = await _capture_create_deep_agent_kwargs(
+            config,
+            thread_settings={"model_id": "openai:gpt-6-astra", "effort": "low"},
+        )
+    assert make.call_count >= 3
+    assert all(call.args[0] == "openai:gpt-5.6-luna" for call in make.call_args_list)
+    assert all(
+        call.kwargs.get("reasoning", {}).get("effort") == "high" for call in make.call_args_list
+    )
+    assert config["configurable"]["agent_model_id"] == "openai:gpt-5.6-luna"
+    assert not any(type(m).__name__ == "ModelFallbackMiddleware" for m in captured["middleware"])

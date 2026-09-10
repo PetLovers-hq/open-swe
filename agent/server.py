@@ -1439,6 +1439,16 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         subagent_model_id = per_thread_model
         subagent_effort = per_thread_effort
 
+    # Kyle's charter lock applies after all profile/thread overrides, including retries.
+    omnia_model_locked = configurable.get("source") == "omnia" or bool(
+        configurable.get("omnia_thread")
+    )
+    if omnia_model_locked:
+        model_id = subagent_model_id = title_model_id = "openai:gpt-5.6-luna"
+        profile_effort = subagent_effort = title_effort = "high"
+        configurable["agent_model_id"] = model_id
+        configurable["agent_effort"] = profile_effort
+
     async with aphase(thread_id, "factory.sender_profile"):
         sender_profile = (
             profile
@@ -1498,7 +1508,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
 
     fallback_model_id = os.environ.get("LLM_FALLBACK_MODEL_ID") or fallback_model_id_for(model_id)
     fallback_middleware: list[Any] = []
-    if fallback_model_id and fallback_model_id != model_id:
+    if not omnia_model_locked and fallback_model_id and fallback_model_id != model_id:
         fallback_kwargs: ModelKwargs = {"max_tokens": DEFAULT_LLM_MAX_TOKENS}
         if fallback_model_id.startswith("openai:"):
             fallback_kwargs["reasoning"] = DEFAULT_LLM_REASONING
