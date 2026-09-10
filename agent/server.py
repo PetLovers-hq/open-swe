@@ -111,6 +111,7 @@ from .middleware import (
     task_on_failure,
     task_retry_on,
 )
+from .middleware.omnia_release_handoff import OmniaReleaseHandoffMiddleware
 from .middleware.prepare_run import PrepareRunState
 from .middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
 from .prompt import construct_sender_context, construct_system_prompt, render_open_swe_shared_base
@@ -1754,6 +1755,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
                 ),
                 *([] if local_run else [PullRequestCreationGuardMiddleware()]),
                 WorkflowPushGuardMiddleware(),
+                OmniaReleaseHandoffMiddleware(),
                 refresh_github_proxy_before_model,
                 *([] if stop_summary_mode else [check_message_queue_before_model]),
                 ensure_no_empty_msg,

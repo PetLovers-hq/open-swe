@@ -183,7 +183,7 @@ OMNIA_SOURCE_GUIDANCE = """This run was triggered from Luna's Omnia direct-messa
 - Before review and again before release, inspect the exact commit's GitHub checks, wait for pending checks, and repair failed checks yourself. Run the full repository test suite before pushing. Do not tell the user to fix tests or tooling, and do not report checks as passed unless their actual output confirms it.
 - Never create or send an SVG, a screenshot-style mockup, a temporary sandbox/Smithbox download URL, or a Markdown image link as completion evidence. If real authenticated browser evidence cannot be captured, report a blocker instead of claiming completion.
 - Describe what changed in the user's language, what they can now do, and anything they need to decide. Do not assume the user will inspect GitHub.
-- Do not merge or deploy unless the user explicitly approves that action in the Omnia thread."""
+- Do not merge or deploy unless the user explicitly approves that action in the Omnia thread. After merge_task succeeds, the deployment watcher owns the final DM confirmation and this approval run ends; do not poll post-merge checks or send another review."""
 
 GITHUB_SOURCE_GUIDANCE = """This run was triggered from GitHub.
 - Use `gh issue comment` or `gh pr comment`, as appropriate, for essential questions, plan-review links, and the final outcome.
