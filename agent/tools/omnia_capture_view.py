@@ -13,7 +13,7 @@ from typing_extensions import TypedDict
 
 from ..utils.sandbox_paths import aresolve_repo_dir
 from ..utils.sandbox_state import get_sandbox_backend
-from .omnia_agent_action import omnia_agent_action
+from .omnia_agent_action import _execute_omnia_agent_action
 from .omnia_dm_reply import _download_bytes
 
 
@@ -135,7 +135,7 @@ async def omnia_capture_view(
             return {"success": False, "error": "Could not write capture view configuration"}
         # Mint only after staging and configuration finish. No model turn occurs
         # between receiving the one-use launcher and consuming it.
-        session = await omnia_agent_action(
+        session = await _execute_omnia_agent_action(
             "browser_session", task_number=task_number, redirect_path=path
         )
         if not session.get("success"):

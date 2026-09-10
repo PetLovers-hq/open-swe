@@ -74,7 +74,9 @@ async def test_new_browser_request_does_not_replay_a_consumed_session(monkeypatc
     post = AsyncMock(return_value={"success": True})
     monkeypatch.setattr(module, "post_omnia_agent_action", post)
     for _ in range(2):
-        await omnia_agent_action("browser_session", preview_url="https://preview.vercel.app")
+        await module._execute_omnia_agent_action(
+            "browser_session", preview_url="https://preview.vercel.app"
+        )
     keys = [call.args[0]["idempotency_key"] for call in post.await_args_list]
     assert keys[0] != keys[1]
 
@@ -120,7 +122,7 @@ async def test_omnia_agent_action_requests_a_preview_browser_session(
     )
     monkeypatch.setattr(module, "post_omnia_agent_action", post)
 
-    result = await omnia_agent_action(
+    result = await module._execute_omnia_agent_action(
         "browser_session",
         preview_url="https://omnia-preview.vercel.app/chat",
         redirect_path="/chat",
@@ -149,8 +151,20 @@ async def test_browser_session_resolves_by_task_without_guessed_url(monkeypatch)
     )
     post = AsyncMock(return_value={"success": True, "preview_origin": "https://real.vercel.app"})
     monkeypatch.setattr(module, "post_omnia_agent_action", post)
-    result = await omnia_agent_action("browser_session", task_number=18)
+    result = await module._execute_omnia_agent_action("browser_session", task_number=18)
     assert result["success"] is True
     assert post.await_args is not None
     assert post.await_args.args[0]["task_number"] == 18
     assert post.await_args.args[0]["preview_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_browser_tool_redirects_without_minting_session(monkeypatch):
+    module = __import__("agent.tools.omnia_agent_action", fromlist=["omnia_agent_action"])
+    post = AsyncMock()
+    monkeypatch.setattr(module, "post_omnia_agent_action", post)
+    result = await omnia_agent_action("browser_session", task_number=30)
+    assert result["success"] is False
+    assert "omnia_capture_view" in result["error"]
+    assert "browser_session_url" not in result
+    post.assert_not_awaited()
