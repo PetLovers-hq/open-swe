@@ -17,13 +17,32 @@ async def omnia_agent_action(
     preview_url: str | None = None,
     redirect_path: str | None = None,
 ) -> dict[str, Any]:
-    """Read/create tasks, authenticate a preview browser, or execute an approved merge.
+    """Read/create Omnia tasks or execute an explicitly approved merge.
 
-    Use create_task only when the human clearly hands Luna new coding work. Use merge_task
-    only after a clear approval for that exact task in this Omnia conversation. Use
-    browser_session with task_number to resolve and authenticate the current task preview.
-    Do not guess deployment URLs. Use returned preview_origin and commit_sha for proof.
+    Use omnia_capture_view for preview screenshots. The legacy browser_session
+    action returns a migration instruction and never exposes a one-use launcher.
     """
+    if action == "browser_session":
+        return {
+            "success": False,
+            "error": "Browser sessions are now owned by omnia_capture_view. Call that tool with task_number, name, wait_for_text, path, viewport, and optional steps/time_zone. It creates and consumes fresh authentication automatically. Do not execute old capture scripts or reuse session URLs.",
+        }
+    return await _execute_omnia_agent_action(
+        action,
+        title=title,
+        task_number=task_number,
+        preview_url=preview_url,
+        redirect_path=redirect_path,
+    )
+
+
+async def _execute_omnia_agent_action(
+    action: Literal["list_tasks", "create_task", "merge_task", "browser_session"],
+    title: str | None = None,
+    task_number: int | None = None,
+    preview_url: str | None = None,
+    redirect_path: str | None = None,
+) -> dict[str, Any]:
     config = get_config()
     configurable = config.get("configurable", {})
     if not isinstance(configurable, dict):

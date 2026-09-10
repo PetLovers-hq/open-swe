@@ -76,7 +76,7 @@ def capture(monkeypatch):
     monkeypatch.setattr(module, "get_config", lambda: config)
     monkeypatch.setattr(module, "get_sandbox_backend", AsyncMock(return_value=backend))
     monkeypatch.setattr(module, "aresolve_repo_dir", AsyncMock(return_value="/sandbox/Omnia"))
-    monkeypatch.setattr(module, "omnia_agent_action", AsyncMock(side_effect=session))
+    monkeypatch.setattr(module, "_execute_omnia_agent_action", AsyncMock(side_effect=session))
     return backend, events, files, config
 
 
