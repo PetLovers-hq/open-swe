@@ -127,7 +127,30 @@ async def test_omnia_agent_action_requests_a_preview_browser_session(
     )
 
     assert result["success"] is True
+    assert post.await_args is not None
     payload = post.await_args.args[0]
     assert payload["preview_url"] == "https://omnia-preview.vercel.app/chat"
     assert payload["redirect_path"] == "/chat"
     assert payload["sender_email"] == "kyle@example.com"
+
+
+@pytest.mark.asyncio
+async def test_browser_session_resolves_by_task_without_guessed_url(monkeypatch):
+    module = __import__("agent.tools.omnia_agent_action", fromlist=["omnia_agent_action"])
+    monkeypatch.setattr(
+        module,
+        "get_config",
+        lambda: {
+            "configurable": {
+                "user_email": "kyle@example.com",
+                "omnia_thread": {"thread_id": "dm-kyle-luna"},
+            },
+        },
+    )
+    post = AsyncMock(return_value={"success": True, "preview_origin": "https://real.vercel.app"})
+    monkeypatch.setattr(module, "post_omnia_agent_action", post)
+    result = await omnia_agent_action("browser_session", task_number=18)
+    assert result["success"] is True
+    assert post.await_args is not None
+    assert post.await_args.args[0]["task_number"] == 18
+    assert post.await_args.args[0]["preview_url"] is None

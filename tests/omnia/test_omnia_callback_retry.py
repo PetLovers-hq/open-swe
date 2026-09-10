@@ -65,5 +65,6 @@ async def test_callback_preserves_actionable_proof_rejection(
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
     success, error = await post_omnia_dm_event({"kind": "message"})
     assert success is False
+    assert error is not None
     assert "exact saved PNG" in error
     client.__aenter__.return_value.post.assert_awaited_once()

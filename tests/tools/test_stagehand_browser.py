@@ -392,12 +392,14 @@ async def test_cdp_guard_reuses_vercel_automation_bypass_for_preview_requests(
         message
         for message in websocket.sent
         if message.get("method") == "Fetch.continueRequest"
-        and isinstance(message.get("params"), dict)
-        and message["params"].get("requestId") in {"bootstrap", "profile"}
+        and isinstance(params := message.get("params"), dict)
+        and params.get("requestId") in {"bootstrap", "profile"}
     ]
     assert len(continued) == 2
     for message in continued:
-        headers = message["params"]["headers"]
+        params = message["params"]
+        assert isinstance(params, dict)
+        headers = params["headers"]
         assert {"name": "x-vercel-protection-bypass", "value": "secret-123"} in headers
 
     await session._open_swe_cdp_guard.close()
