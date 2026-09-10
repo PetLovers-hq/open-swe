@@ -1,11 +1,11 @@
-"""Remove non-replayable reasoning items from stateless OpenAI history."""
+"""Keep stateless OpenAI history replayable, including rejected tool calls."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, AnyMessage
+from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -27,10 +27,30 @@ def _is_stateless_chat_openai(model: object) -> bool:
 
 
 def _sanitize_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+    result_ids = {message.tool_call_id for message in messages if isinstance(message, ToolMessage)}
     sanitized: list[AnyMessage] = []
     for message in messages:
+        if isinstance(message, AIMessage):
+            missing_results = [
+                ToolMessage(
+                    content=(
+                        "Tool invocation rejected: arguments were not valid JSON. "
+                        "This tool was NOT executed and no message or screenshot was sent. "
+                        "Retry the tool with complete, valid JSON arguments."
+                    ),
+                    tool_call_id=call["id"],
+                    name=call.get("name") or "unknown",
+                    status="error",
+                )
+                for call in message.invalid_tool_calls
+                if call.get("id") and call["id"] not in result_ids
+            ]
+            result_ids.update(result.tool_call_id for result in missing_results)
+        else:
+            missing_results = []
         if not isinstance(message, AIMessage) or not isinstance(message.content, list):
             sanitized.append(message)
+            sanitized.extend(missing_results)
             continue
         content = [
             block
@@ -48,11 +68,12 @@ def _sanitize_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
             if len(content) == len(message.content)
             else message.model_copy(update={"content": content})
         )
+        sanitized.extend(missing_results)
     return sanitized
 
 
 class SanitizeOpenAIResponsesMiddleware(AgentMiddleware):
-    """Drop reasoning item IDs that OpenAI cannot resolve with ``store=False``."""
+    """Preserve tool protocol and remove unresolvable stateless reasoning IDs."""
 
     async def awrap_model_call(
         self,
