@@ -32,6 +32,7 @@ _TOOL_MODULES = {
     "notify_automation_channel": ".notify_automation_channel",
     "omnia_dm_reply": ".omnia_dm_reply",
     "omnia_agent_action": ".omnia_agent_action",
+    "omnia_capture_view": ".omnia_capture_view",
     "open_pull_request": ".open_pull_request",
     "output_iframe": ".output_iframe",
     "publish_review": ".publish_review",
@@ -90,6 +91,7 @@ __all__ = [
     "notify_automation_channel",
     "omnia_dm_reply",
     "omnia_agent_action",
+    "omnia_capture_view",
     "open_pull_request",
     "output_iframe",
     "publish_review",
@@ -146,6 +148,7 @@ if TYPE_CHECKING:
     from .manage_baby_sit import manage_baby_sit
     from .notify_automation_channel import notify_automation_channel
     from .omnia_agent_action import omnia_agent_action
+    from .omnia_capture_view import omnia_capture_view
     from .omnia_dm_reply import omnia_dm_reply
     from .open_pull_request import open_pull_request
     from .organization_skills import delete_organization_skill, save_organization_skill

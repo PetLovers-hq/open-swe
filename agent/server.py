@@ -152,6 +152,7 @@ from .tools import (
     manage_thread,
     notify_automation_channel,
     omnia_agent_action,
+    omnia_capture_view,
     omnia_dm_reply,
     open_pull_request,
     output_iframe,
@@ -1615,6 +1616,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         notify_automation_channel,
         omnia_dm_reply,
         omnia_agent_action,
+        omnia_capture_view,
         open_pull_request,
         *((output_iframe, create_sandbox_file_download_url) if sandbox_file_downloads else ()),
         read_user_settings,
@@ -1640,7 +1642,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         static_tools = [
             tool
             for tool in static_tools
-            if tool is not omnia_dm_reply and tool is not omnia_agent_action
+            if tool not in (omnia_dm_reply, omnia_agent_action, omnia_capture_view)
         ]
     dynamic_tool_middleware: DynamicToolMiddleware | None = None
     integration_tool_groups = {
