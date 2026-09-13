@@ -10,13 +10,18 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from langchain_core.messages.content import create_text_block
 from pydantic import BaseModel, Field
 
-from ..dispatch import dispatch_agent_run
+from ..dispatch import dispatch_agent_run, dispatch_client
 from ..utils.omnia import post_omnia_dm_event, verify_omnia_signature
 from . import common
 
 router = APIRouter()
 
 _SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+
+class OmniaStopTarget(BaseModel):
+    event_id: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=100_000)
 
 
 class OmniaDmEvent(BaseModel):
@@ -31,6 +36,8 @@ class OmniaDmEvent(BaseModel):
     repo_name: str | None = Field(default=None, max_length=100)
     attachments: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     journal_run_id: int | None = Field(default=None, gt=0)
+    stop_requested: bool = False
+    stop_target: OmniaStopTarget | None = None
 
 
 _SCOPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -148,6 +155,24 @@ async def _multimodal_content(
 
 
 async def process_omnia_dm(event: OmniaDmEvent) -> None:
+    if event.stop_requested:
+        try:
+            await stop_omnia_request(event)
+        except Exception:
+            # Never enqueue a coding recovery for a failed stop operation.
+            await post_omnia_dm_event(
+                {
+                    "kind": "message",
+                    "purpose": "progress",
+                    "terminal_status": "error",
+                    "message": "I could not verify that the request stopped. Stop confirmation failed.",
+                    "dm_thread_id": event.dm_thread_id,
+                    "event_id": event.event_id,
+                    "journal_run_id": event.journal_run_id,
+                }
+            )
+            raise
+        return
     thread_id = _thread_id(event.dm_thread_id, event.message)
     repo = _repo(event)
     model_id = "openai:gpt-5.6-luna"
@@ -201,6 +226,44 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
     )
 
 
+async def stop_omnia_request(event: OmniaDmEvent) -> None:
+    """A signed, user-authorized stop bypasses the model and its busy work queue."""
+    target = event.stop_target
+    thread_id = _thread_id(event.dm_thread_id, target.message if target else event.message)
+    if target:
+        client = dispatch_client()
+        run_ids: set[str] = set()
+        # Gather first: cancelling while paginating would shift offsets.
+        for status in ("pending", "running"):
+            offset = 0
+            while True:
+                runs = await client.runs.list(thread_id, status=status, limit=100, offset=offset)
+                for run in runs:
+                    metadata = run.get("metadata") or {}
+                    if str(metadata.get("event_id")) == target.event_id:
+                        run_ids.add(run["run_id"])
+                if len(runs) < 100:
+                    break
+                offset += len(runs)
+        for run_id in sorted(run_ids):
+            await client.runs.cancel(thread_id, run_id, action="interrupt", wait=True)
+    posted, error = await post_omnia_dm_event(
+        {
+            "kind": "message",
+            "purpose": "progress",
+            "terminal_status": "cancelled",
+            "message": "Stopped at your request.",
+            "dm_thread_id": event.dm_thread_id,
+            "event_id": event.event_id,
+            "cancelled_event_id": target.event_id if target else None,
+            "agent_thread_id": thread_id,
+            "journal_run_id": event.journal_run_id,
+        }
+    )
+    if not posted:
+        raise RuntimeError(error or "Could not confirm the stop in Omnia")
+
+
 @router.post("/webhooks/omnia")
 async def omnia_webhook(request: Request, background_tasks: BackgroundTasks) -> dict[str, str]:
     body = await request.body()
@@ -221,6 +284,7 @@ async def omnia_webhook(request: Request, background_tasks: BackgroundTasks) -> 
             "dm_thread_id": event.dm_thread_id,
             "event_id": event.event_id,
             "agent_thread_id": _thread_id(event.dm_thread_id, event.message),
+            "journal_run_id": event.journal_run_id,
         }
     )
     return {"status": "accepted", "thread_id": _thread_id(event.dm_thread_id, event.message)}
