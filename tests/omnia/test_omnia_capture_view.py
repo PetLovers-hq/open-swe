@@ -248,3 +248,61 @@ async def test_capture_image_reaches_langchain_tool_message_without_stringificat
     image = request[0]["output"][1]
     assert image["type"] == "input_image"
     assert base64.b64decode(image["image_url"].split(",", 1)[1]) == PNG
+
+
+@pytest.mark.parametrize(
+    "step,expected",
+    [
+        (
+            {"fill_placeholder": "Search", "text": "invoice"},
+            {"fillPlaceholder": "Search", "text": "invoice"},
+        ),
+        ({"fill_placeholder": "Search", "text": ""}, {"fillPlaceholder": "Search", "text": ""}),
+        (
+            {"press_key": "ArrowDown", "within": "input"},
+            {"pressKey": "ArrowDown", "within": "input"},
+        ),
+        ({"scroll_text": "Pictures"}, {"scrollText": "Pictures"}),
+    ],
+)
+def test_normalizes_browser_actions(step, expected):
+    assert module._capture_step(step) == expected
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        {"click_text": "Go", "press_key": "Enter"},
+        {"fill_placeholder": "Search"},
+        {"press_key": "javascript"},
+        {"scroll_text": ""},
+        {"click_text": "Go", "script": "bad"},
+        {"fill_placeholder": "Search", "text": "x" * 10_001},
+    ],
+)
+def test_rejects_ambiguous_or_unsupported_browser_actions(step):
+    assert module._capture_step(step) is None
+
+
+async def test_capture_forwards_interactions_and_keeps_native_evidence(capture):
+    backend, events, _, _ = capture
+    blocks = await module.omnia_capture_view(
+        30,
+        "search-phone",
+        ["Search results"],
+        steps=[
+            {"click_text": "Search"},
+            {"fill_placeholder": "Search…", "text": "invoice"},
+            {"press_key": "ArrowDown"},
+            {"scroll_text": "Search results"},
+        ],
+    )
+    assert events == ["stage", "write", "session", "capture"]
+    view = json.loads(backend.awrite.await_args.args[1])
+    assert view["steps"] == [
+        {"clickText": "Search"},
+        {"fillPlaceholder": "Search…", "text": "invoice"},
+        {"pressKey": "ArrowDown"},
+        {"scrollText": "Search results"},
+    ]
+    assert base64.b64decode(blocks[1]["image_url"]["url"].split(",", 1)[1]) == PNG

@@ -8,7 +8,7 @@ import posixpath
 import re
 import shlex
 import uuid
-from typing import Any, Literal, NotRequired
+from typing import Any, Literal
 
 from langgraph.config import get_config
 from typing_extensions import TypedDict
@@ -19,9 +19,56 @@ from .omnia_agent_action import _execute_omnia_agent_action
 from .omnia_dm_reply import _download_bytes
 
 
-class CaptureStep(TypedDict):
+class CaptureStep(TypedDict, total=False):
     click_text: str
-    within: NotRequired[str]
+    fill_placeholder: str
+    text: str
+    press_key: Literal[
+        "Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"
+    ]
+    scroll_text: str
+    within: str
+
+
+def _capture_step(step: Any) -> dict[str, Any] | None:
+    if not isinstance(step, dict):
+        return None
+    actions = {
+        "click_text": "clickText",
+        "fill_placeholder": "fillPlaceholder",
+        "press_key": "pressKey",
+        "scroll_text": "scrollText",
+    }
+    selected = [key for key in actions if key in step]
+    if len(selected) != 1:
+        return None
+    action = selected[0]
+    allowed = {action, "within"} | ({"text"} if action == "fill_placeholder" else set())
+    if set(step) - allowed or not isinstance(step[action], str) or not step[action].strip():
+        return None
+    if "within" in step and (not isinstance(step["within"], str) or not step["within"].strip()):
+        return None
+    if action == "fill_placeholder" and (
+        not isinstance(step.get("text"), str) or len(step["text"]) > 10_000
+    ):
+        return None
+    if action == "press_key" and step[action] not in {
+        "Enter",
+        "Escape",
+        "Tab",
+        "ArrowDown",
+        "ArrowUp",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+    }:
+        return None
+    return {
+        actions[action]: step[action],
+        **({"text": step["text"]} if action == "fill_placeholder" else {}),
+        **({"within": step["within"]} if "within" in step else {}),
+    }
 
 
 async def _ready_preview_session(task_number: int, path: str) -> dict[str, Any]:
@@ -69,7 +116,13 @@ async def omnia_capture_view(
     describe distinctive loaded body content on the FINAL screen AFTER every step,
     not just a header or branding also present while content loads. When a toggle changes its label,
     wait for the new label, not the old label and new label together. steps click
-    exact visible text (including emoji).
+    exact visible text (including emoji). Each step has exactly one action:
+    {"click_text": "Search"}, {"fill_placeholder": "Search tasks…", "text": "invoice"},
+    {"press_key": "ArrowDown"}, or {"scroll_text": "Section heading"}.
+    Fill uses an exact visible editable input/textarea placeholder; text="" clears it.
+    Keyboard actions act on current focus, or one visible within CSS target.
+    Scroll brings a unique visible text element into the screenshot area.
+    These are real interactions: use disposable records for tests that save data.
     If a label exists in both a sidebar and a card, set within to the intended CSS
     container, e.g. main aside, based on repository markup. A failed view returns
     its actual page/controls; change the view before retrying. Every call creates
@@ -98,15 +151,12 @@ async def omnia_capture_view(
     if steps is not None and (
         not isinstance(steps, list)
         or len(steps) > 10
-        or any(
-            not isinstance(s, dict)
-            or not isinstance(s.get("click_text"), str)
-            or not s["click_text"].strip()
-            or ("within" in s and (not isinstance(s["within"], str) or not s["within"].strip()))
-            for s in steps
-        )
+        or any(_capture_step(s) is None for s in steps)
     ):
-        return {"success": False, "error": "Provide at most ten steps with exact click_text"}
+        return {
+            "success": False,
+            "error": "Provide at most ten steps, each with one click_text, fill_placeholder + text, press_key, or scroll_text action",
+        }
     config = get_config().get("configurable", {})
     repo = config.get("repo", {})
     thread_id = config.get("thread_id")
@@ -152,10 +202,7 @@ async def omnia_capture_view(
             if viewport == "phone"
             else {"width": 1500, "height": 950},
             "waitForText": wait_for_text,
-            "steps": [
-                {"clickText": s["click_text"], **({"within": s["within"]} if "within" in s else {})}
-                for s in steps or []
-            ],
+            "steps": [_capture_step(s) for s in steps or []],
         }
         if time_zone:
             view["timeZone"] = time_zone
