@@ -1,5 +1,5 @@
 import base64
-from typing import Literal
+from typing import Any, Literal, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,7 +22,7 @@ def _config() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_omnia_reply_sends_review_png_as_native_attachment(
+async def test_single_image_review_is_rejected_before_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = __import__("agent.tools.omnia_dm_reply", fromlist=["omnia_dm_reply"])
@@ -53,23 +53,9 @@ async def test_omnia_reply_sends_review_png_as_native_attachment(
         passed_checks=["focused tests", "build"],
     )
 
-    assert result == {"success": True}
-    await_args = post.await_args
-    assert await_args is not None
-    payload = await_args.args[0]
-    assert payload["attachments"] == [
-        {
-            "name": "finished-ui.png",
-            "mime": "image/png",
-            "data_base64": base64.b64encode(png).decode(),
-        }
-    ]
-    assert "github" not in payload["message"].lower()
-    assert payload["purpose"] == "review"
-    assert payload["event_id"] == "note-123"
-    assert payload["journal_run_id"] == 44
-    assert payload["evidence"]["task_number"] == 7
-    assert payload["evidence"]["auth_receipt"] == "11111111-1111-4111-8111-111111111111"
+    assert result["success"] is False
+    assert "desktop and mobile" in result["error"]
+    post.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -103,7 +89,7 @@ async def test_coding_completion_requires_png(monkeypatch: pytest.MonkeyPatch) -
     result = await omnia_dm_reply("Finished.", completion=True)
 
     assert result["success"] is False
-    assert "requires a real PNG" in result["error"]
+    assert "desktop and mobile" in result["error"]
     post.assert_not_awaited()
 
 
@@ -181,10 +167,20 @@ async def test_multiple_screenshots_are_delivered_in_one_review(
         screenshots=[
             {
                 "screenshot_path": "/desktop.png",
+                "visual_check": {
+                    "change": "The requested change is visible on desktop.",
+                    "layout": "Labels are readable; controls do not overlap.",
+                    "passed": True,
+                },
                 "auth_receipt": "11111111-1111-4111-8111-111111111111",
             },
             {
                 "screenshot_path": "/phone.png",
+                "visual_check": {
+                    "change": "The requested screen is usable on mobile.",
+                    "layout": "The controls fit within the phone viewport.",
+                    "passed": True,
+                },
                 "auth_receipt": "22222222-2222-4222-8222-222222222222",
             },
         ],
@@ -230,10 +226,20 @@ async def test_multi_image_failure_never_posts_a_partial_review(
         screenshots=[
             {
                 "screenshot_path": "/desktop.png",
+                "visual_check": {
+                    "change": "The requested change is visible on desktop.",
+                    "layout": "Labels are readable; controls do not overlap.",
+                    "passed": True,
+                },
                 "auth_receipt": "11111111-1111-4111-8111-111111111111",
             },
             {
                 "screenshot_path": "/phone.png",
+                "visual_check": {
+                    "change": "The requested screen is usable on mobile.",
+                    "layout": "The controls fit within the phone viewport.",
+                    "passed": True,
+                },
                 "auth_receipt": "11111111-1111-4111-8111-111111111111"
                 if failure == "duplicate"
                 else "22222222-2222-4222-8222-222222222222",
@@ -241,4 +247,48 @@ async def test_multi_image_failure_never_posts_a_partial_review(
         ],
     )
     assert result["success"] is False
+    post.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        None,
+        {"change": "", "layout": "", "passed": True},
+        {
+            "change": "The wrong view is shown.",
+            "layout": "Controls overlap each other.",
+            "passed": False,
+        },
+    ],
+)
+async def test_unchecked_or_visibly_failed_image_never_posts(monkeypatch, check):
+    import importlib
+
+    module = importlib.import_module("agent.tools.omnia_dm_reply")
+    post = AsyncMock()
+    monkeypatch.setattr(module, "post_omnia_dm_event", post)
+    screenshots = [
+        {
+            "screenshot_path": "/desktop.png",
+            "auth_receipt": "11111111-1111-4111-8111-111111111111",
+            "visual_check": check,
+        },
+        {
+            "screenshot_path": "/phone.png",
+            "auth_receipt": "22222222-2222-4222-8222-222222222222",
+            "visual_check": check,
+        },
+    ]
+    result = await omnia_dm_reply(
+        "Please review both images.",
+        completion=True,
+        task_number=33,
+        commit_sha="a" * 40,
+        preview_url="https://preview.vercel.app",
+        passed_checks=["tests", "build"],
+        screenshots=cast(Any, screenshots),
+    )
+    assert result["success"] is False
+    assert "Inspect every" in result["error"]
     post.assert_not_awaited()
