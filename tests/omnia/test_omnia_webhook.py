@@ -287,3 +287,70 @@ async def test_process_omnia_dm_does_not_switch_models_for_images(
     configurable = await_args.args[2]
     assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
     assert configurable["agent_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_stop_bypasses_busy_queue_and_cancels_only_target_request(monkeypatch):
+    from types import SimpleNamespace
+
+    calls = AsyncMock(
+        side_effect=[
+            [
+                {"run_id": "target-pending", "metadata": {"event_id": "old"}},
+                {"run_id": "unrelated", "metadata": {"event_id": "other"}},
+            ],
+            [{"run_id": "target-running", "metadata": {"event_id": "old"}}],
+        ]
+    )
+    cancel = AsyncMock()
+    client = SimpleNamespace(runs=SimpleNamespace(list=calls, cancel=cancel))
+    monkeypatch.setattr(omnia_routes, "dispatch_client", lambda: client)
+    dispatch = AsyncMock()
+    monkeypatch.setattr(omnia_routes, "dispatch_agent_run", dispatch)
+    callback = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(omnia_routes, "post_omnia_dm_event", callback)
+    event = omnia_routes.OmniaDmEvent.model_validate(
+        _payload()
+        | {
+            "message": "Stop.",
+            "stop_requested": True,
+            "stop_target": {"event_id": "old", "message": "Fix inventory"},
+            "journal_run_id": 9,
+        }
+    )
+    await omnia_routes.process_omnia_dm(event)
+    dispatch.assert_not_awaited()
+    thread = omnia_routes._thread_id(event.dm_thread_id, "Fix inventory")
+    assert cancel.await_count == 2
+    for call in cancel.await_args_list:
+        assert call.args[0] == thread
+        assert call.args[1] in {"target-pending", "target-running"}
+        assert call.kwargs == {"action": "interrupt", "wait": True}
+    assert callback.await_args is not None
+    assert callback.await_args.args[0]["terminal_status"] == "cancelled"
+    assert callback.await_args.args[0]["cancelled_event_id"] == "old"
+    assert callback.await_args.args[0]["journal_run_id"] == 9
+
+
+@pytest.mark.asyncio
+async def test_stop_failure_does_not_claim_success(monkeypatch):
+    from types import SimpleNamespace
+
+    client = SimpleNamespace(
+        runs=SimpleNamespace(list=AsyncMock(side_effect=RuntimeError("offline")))
+    )
+    monkeypatch.setattr(omnia_routes, "dispatch_client", lambda: client)
+    callback = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(omnia_routes, "post_omnia_dm_event", callback)
+    event = omnia_routes.OmniaDmEvent.model_validate(
+        _payload()
+        | {
+            "message": "Stop.",
+            "stop_requested": True,
+            "stop_target": {"event_id": "old", "message": "Fix Docs"},
+        }
+    )
+    with pytest.raises(RuntimeError, match="offline"):
+        await omnia_routes.process_omnia_dm(event)
+    assert callback.await_args is not None
+    assert callback.await_args.args[0]["terminal_status"] == "error"
