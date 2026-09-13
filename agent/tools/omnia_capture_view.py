@@ -1,6 +1,7 @@
 """Capture authenticated Omnia review evidence in the durable coding sandbox."""
 
 import asyncio
+import base64
 import hashlib
 import json
 import posixpath
@@ -48,14 +49,18 @@ async def omnia_capture_view(
     viewport: Literal["desktop", "phone"] = "desktop",
     steps: list[CaptureStep] | None = None,
     time_zone: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | list[dict[str, Any]]:
     """Capture one real preview PNG and its fresh authenticated receipt.
 
     Handles current-driver staging and automatic waiting for pending preview builds,
     one-use browser authentication, navigation,
     screenshot hashing, and receipt registration. Do not run proof scripts manually.
-    Use one call per requested view, then read_file each returned screenshot_path
-    and send all views together through omnia_dm_reply screenshots.
+    Always capture desktop AND phone, even for a desktop-only change. Success includes
+    the exact PNG as an image in this tool response: inspect it now, without another
+    read_file call. Check requested behavior, loaded content, readable text, clipped
+    or overlapping controls, and a usable corresponding phone screen. Fix visible
+    defects and recapture before sending. Record concrete visual_check observations
+    for every image in omnia_dm_reply; do not just repeat a test result.
 
     path must be an observed route; never guess record IDs. wait_for_text must
     describe the requested screen. steps click exact visible text (including emoji).
@@ -204,7 +209,7 @@ async def omnia_capture_view(
             or not re.fullmatch(r"[0-9a-f-]{36}", proof.get("receipt", ""))
         ):
             return {"success": False, "error": "Capture evidence and receipt did not match"}
-        return {
+        evidence = {
             "success": True,
             "task_number": task_number,
             "commit_sha": commit_sha,
@@ -212,8 +217,18 @@ async def omnia_capture_view(
             "screenshot_path": png_path,
             "auth_receipt": proof["receipt"],
             "page": proof.get("page", {}),
-            "next_step": "Open this exact PNG with read_file. Deliver every requested view together in one omnia_dm_reply review.",
+            "viewport": viewport,
+            "next_step": "Inspect the attached exact PNG now. Verify the requested state, loaded content, readable text, no clipping/overlap, and usable controls. Fix defects before review. Capture both desktop and phone on this commit; send every view with concrete visual_check change/layout observations and passed: true. No additional image-read tool is needed.",
         }
+        return [
+            {"type": "text", "text": json.dumps(evidence)},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/png;base64," + base64.b64encode(png_bytes).decode()
+                },
+            },
+        ]
     except Exception as exc:
         detail = str(exc)
         if bootstrap_url:

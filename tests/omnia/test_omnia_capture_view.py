@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import importlib
 import json
@@ -96,6 +97,10 @@ async def test_capture_stages_before_fresh_session_and_returns_bound_png(capture
             )
         )
     assert events == ["stage", "write", "session", "capture"] * 2
+    for blocks in results:
+        assert blocks[1]["type"] == "image_url"
+        assert base64.b64decode(blocks[1]["image_url"]["url"].split(",", 1)[1]) == PNG
+    results = [json.loads(blocks[0]["text"]) for blocks in results]
     assert results[0]["screenshot_path"] != results[1]["screenshot_path"]
     for result in results:
         assert result["success"] is True
@@ -173,7 +178,7 @@ async def test_pending_preview_waits_and_captures_without_model_retry(capture, m
     sleep = AsyncMock()
     monkeypatch.setattr(module.asyncio, "sleep", sleep)
     result = await module.omnia_capture_view(30, "docs", ["Last edited"])
-    assert result["success"] is True
+    assert json.loads(result[0]["text"])["success"] is True
     assert calls == 3
     assert sleep.await_count == 2
     assert events == ["stage", "write", "session", "capture"]
@@ -211,3 +216,35 @@ async def test_authentication_error_is_not_retried_as_pending_build(capture, mon
     request.assert_awaited_once()
     sleep.assert_not_awaited()
     assert events == ["stage", "write"]
+
+
+async def test_capture_image_reaches_langchain_tool_message_without_stringification(capture):
+    from langchain_core.tools import StructuredTool
+
+    tool = StructuredTool.from_function(coroutine=module.omnia_capture_view)
+    result = await tool.ainvoke(
+        {
+            "name": "omnia_capture_view",
+            "args": {
+                "task_number": 33,
+                "name": "phone",
+                "wait_for_text": ["Last edited"],
+                "viewport": "phone",
+            },
+            "id": "capture-test",
+            "type": "tool_call",
+        }
+    )
+    assert result.tool_call_id == "capture-test"
+    assert isinstance(result.content, list)
+    assert result.content[1]["type"] == "image_url"
+    assert base64.b64decode(result.content[1]["image_url"]["url"].split(",", 1)[1]) == PNG
+    assert json.loads(result.content[0]["text"])["viewport"] == "phone"
+
+    from langchain_openai.chat_models.base import _construct_responses_api_input
+
+    request = _construct_responses_api_input([result])
+    assert request[0]["type"] == "function_call_output"
+    image = request[0]["output"][1]
+    assert image["type"] == "input_image"
+    assert base64.b64decode(image["image_url"].split(",", 1)[1]) == PNG

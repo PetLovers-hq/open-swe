@@ -16,9 +16,16 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _MAX_REVIEW_PNG_BYTES = 3 * 1024 * 1024
 
 
+class VisualCheck(TypedDict):
+    change: str
+    layout: str
+    passed: bool
+
+
 class ReviewScreenshot(TypedDict):
     screenshot_path: str
     auth_receipt: str
+    visual_check: VisualCheck
 
 
 def _download_bytes(result: Any) -> bytes | None:
@@ -68,11 +75,17 @@ async def omnia_dm_reply(
     Use screenshots=[{"screenshot_path": "/absolute/desktop.png", "auth_receipt": "..."},
     {"screenshot_path": "/absolute/phone.png", "auth_receipt": "..."}] to deliver ALL requested
     images together in ONE review. Each needs its own receipt for the same task, commit and preview.
-    One to five images are supported, at most 3 MB total. Never claim an image is attached unless
+    Every review needs desktop AND phone, even for desktop-only work. Two to five
+    images are supported, at most 3 MB total. Never claim an image is attached unless
     it is included in this call. Omnia publishes the entire set atomically, or none of it.
-    For one image, the legacy screenshot_path plus auth_receipt arguments also work.
-    Open the exact PNG with read_file and visually inspect it before sending.
-    Only claim states visible in that image; after rejection capture a new image.
+    Each screenshot also requires visual_check={"change": "visible requested behavior",
+    "layout": "readability, clipping/overlap and control usability observations", "passed": True}.
+    Inspect the exact image shown by omnia_capture_view before filling this in.
+    A success flag, filename or DOM assertion is not visual review. If the requested
+    state is missing, content is blank/loading, or layout is obviously broken, fix
+    and recapture before asking the user. A desktop-only feature still needs a phone
+    screenshot showing the corresponding screen remains usable. After rejection,
+    capture and inspect fresh desktop and phone images on the revised commit.
     Never substitute an SVG, mockup, GitHub link, or sandbox download URL.
     The PNG must be the exact saved bytes hashed for auth_receipt. A different
     capture of the same screen is not interchangeable. If Omnia rejects the
@@ -95,10 +108,10 @@ async def omnia_dm_reply(
             "error": "Provide one to five screenshots, each with a path and its own auth_receipt",
         }
     primary_receipt = screenshots[0]["auth_receipt"] if screenshots else auth_receipt
-    if completion and screenshot_path is None and not screenshots:
+    if completion and (not screenshots or len(screenshots) < 2):
         return {
             "success": False,
-            "error": "A successful coding completion requires a real PNG screenshot_path",
+            "error": "Every review requires real desktop and mobile PNG screenshots together",
         }
     if completion and terminal_outcome is not None:
         return {"success": False, "error": "A completion cannot also be a blocker or failure"}
@@ -116,6 +129,20 @@ async def omnia_dm_reply(
             "success": False,
             "error": "Completion requires task, exact commit, ready preview, authenticated visual-proof receipt, and at least two passed checks",
         }
+    if completion and any(
+        not isinstance(item.get("visual_check"), dict)
+        or item["visual_check"].get("passed") is not True
+        or any(
+            not isinstance(item["visual_check"].get(key), str)
+            or not 12 <= len(item["visual_check"][key].strip()) <= 1200
+            for key in ("change", "layout")
+        )
+        for item in screenshots or []
+    ):
+        return {
+            "success": False,
+            "error": "Inspect every captured PNG. Supply concrete visual_check change/layout observations and passed: true for each. Fix and recapture anything visibly wrong before review.",
+        }
     config: Mapping[str, Any] = get_config()
     configurable = config.get("configurable", {})
     if not isinstance(configurable, dict):
@@ -127,14 +154,15 @@ async def omnia_dm_reply(
     if not isinstance(thread_id, str) or not thread_id:
         return {"success": False, "error": "Missing Omnia DM thread id"}
     run_id = config.get("run_id") or configurable.get("run_id")
-    attachments: list[dict[str, str]] = []
+    attachments: list[dict[str, Any]] = []
     try:
         if screenshots:
             if len({item["auth_receipt"] for item in screenshots}) != len(screenshots):
                 raise ValueError("Each screenshot requires a distinct visual-proof receipt")
             for item in screenshots:
-                attachment = await _native_png(item["screenshot_path"])
+                attachment: dict[str, Any] = dict(await _native_png(item["screenshot_path"]))
                 attachment["auth_receipt"] = item["auth_receipt"]
+                attachment["visual_check"] = item.get("visual_check")
                 attachments.append(attachment)
         elif screenshot_path is not None:
             attachments.append(await _native_png(screenshot_path))
