@@ -59,12 +59,15 @@ async def omnia_capture_view(
     the exact PNG as an image in this tool response: inspect it now, without another
     read_file call. Check requested behavior, loaded content, readable text, clipped
     or overlapping controls, cramped tap targets, short labels split across lines,
-    and a usable corresponding phone screen. Fix visible
+    and a usable corresponding phone screen. Every requested picture or visual
+    element must appear in both applicable views; readable text does not excuse
+    blank image regions. Unavailable images need a clean visible placeholder. Fix visible
     defects and recapture before sending. Record concrete visual_check observations
     for every image in omnia_dm_reply; do not just repeat a test result.
 
     path must be an observed route; never guess record IDs. wait_for_text must
-    describe the FINAL screen AFTER every step. When a toggle changes its label,
+    describe distinctive loaded body content on the FINAL screen AFTER every step,
+    not just a header or branding also present while content loads. When a toggle changes its label,
     wait for the new label, not the old label and new label together. steps click
     exact visible text (including emoji).
     If a label exists in both a sidebar and a card, set within to the intended CSS
