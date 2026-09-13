@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Literal
 
 from langgraph.config import get_config
+from pydantic import ConfigDict, with_config
 from typing_extensions import TypedDict
 
 from ..utils.sandbox_paths import aresolve_repo_dir
@@ -19,15 +20,31 @@ from .omnia_agent_action import _execute_omnia_agent_action
 from .omnia_dm_reply import _download_bytes
 
 
-class CaptureStep(TypedDict, total=False):
+@with_config(ConfigDict(extra="forbid"))
+class CaptureScope(TypedDict, total=False):
+    within: str | None
+
+
+class ClickCaptureStep(CaptureScope):
     click_text: str
+
+
+class FillCaptureStep(CaptureScope):
     fill_placeholder: str
     text: str
+
+
+class KeyCaptureStep(CaptureScope):
     press_key: Literal[
         "Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"
     ]
+
+
+class ScrollCaptureStep(CaptureScope):
     scroll_text: str
-    within: str
+
+
+CaptureStep = ClickCaptureStep | FillCaptureStep | KeyCaptureStep | ScrollCaptureStep
 
 
 def _capture_step(step: Any) -> dict[str, Any] | None:
@@ -46,7 +63,8 @@ def _capture_step(step: Any) -> dict[str, Any] | None:
     allowed = {action, "within"} | ({"text"} if action == "fill_placeholder" else set())
     if set(step) - allowed or not isinstance(step[action], str) or not step[action].strip():
         return None
-    if "within" in step and (not isinstance(step["within"], str) or not step["within"].strip()):
+    within = step.get("within")
+    if within is not None and (not isinstance(within, str) or not within.strip()):
         return None
     if action == "fill_placeholder" and (
         not isinstance(step.get("text"), str) or len(step["text"]) > 10_000
@@ -67,7 +85,7 @@ def _capture_step(step: Any) -> dict[str, Any] | None:
     return {
         actions[action]: step[action],
         **({"text": step["text"]} if action == "fill_placeholder" else {}),
-        **({"within": step["within"]} if "within" in step else {}),
+        **({"within": within} if within is not None else {}),
     }
 
 

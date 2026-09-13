@@ -284,6 +284,47 @@ def test_rejects_ambiguous_or_unsupported_browser_actions(step):
     assert module._capture_step(step) is None
 
 
+def test_provider_schema_has_separate_action_choices_and_accepts_nullable_scope():
+    from typing import cast
+
+    from langchain_core.tools import StructuredTool
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from pydantic import BaseModel, ValidationError
+
+    tool = StructuredTool.from_function(coroutine=module.omnia_capture_view)
+    args_schema = cast(type[BaseModel], tool.args_schema)
+    schema = convert_to_openai_tool(tool, strict=True)["function"]["parameters"]
+    choices = schema["properties"]["steps"]["anyOf"][0]["items"]["anyOf"]
+    actions = {"click_text", "fill_placeholder", "press_key", "scroll_text"}
+    assert len(choices) == 4
+    assert {next(iter(set(c["properties"]) & actions)) for c in choices} == actions
+    for choice in choices:
+        assert len(set(choice["properties"]) & actions) == 1
+        assert choice["additionalProperties"] is False
+        assert {"type": "null"} in choice["properties"]["within"]["anyOf"]
+
+    for step in [
+        {"click_text": "Go", "within": None},
+        {"fill_placeholder": "Search", "text": "", "within": None},
+        {"press_key": "Tab", "within": None},
+        {"scroll_text": "Pictures", "within": None},
+    ]:
+        parsed = args_schema.model_validate(
+            {"task_number": 35, "name": "test", "wait_for_text": ["Ready"], "steps": [step]}
+        )
+        assert module._capture_step(parsed.model_dump()["steps"][0]) is not None
+
+    with pytest.raises(ValidationError):
+        args_schema.model_validate(
+            {
+                "task_number": 35,
+                "name": "test",
+                "wait_for_text": ["Ready"],
+                "steps": [{"click_text": "Go", "press_key": "Enter"}],
+            }
+        )
+
+
 async def test_capture_forwards_interactions_and_keeps_native_evidence(capture):
     backend, events, _, _ = capture
     blocks = await module.omnia_capture_view(
