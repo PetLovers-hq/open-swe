@@ -295,8 +295,8 @@ def test_provider_schema_has_separate_action_choices_and_accepts_nullable_scope(
     args_schema = cast(type[BaseModel], tool.args_schema)
     schema = convert_to_openai_tool(tool, strict=True)["function"]["parameters"]
     choices = schema["properties"]["steps"]["anyOf"][0]["items"]["anyOf"]
-    actions = {"click_text", "fill_placeholder", "press_key", "scroll_text"}
-    assert len(choices) == 4
+    actions = {"click_text", "fill_placeholder", "press_key", "scroll_text", "wait_text"}
+    assert len(choices) == 5
     assert {next(iter(set(c["properties"]) & actions)) for c in choices} == actions
     for choice in choices:
         assert len(set(choice["properties"]) & actions) == 1
@@ -308,6 +308,7 @@ def test_provider_schema_has_separate_action_choices_and_accepts_nullable_scope(
         {"fill_placeholder": "Search", "text": "", "within": None},
         {"press_key": "Tab", "within": None},
         {"scroll_text": "Pictures", "within": None},
+        {"wait_text": "Search results", "within": None},
     ]:
         parsed = args_schema.model_validate(
             {"task_number": 35, "name": "test", "wait_for_text": ["Ready"], "steps": [step]}
@@ -334,6 +335,7 @@ async def test_capture_forwards_interactions_and_keeps_native_evidence(capture):
         steps=[
             {"click_text": "Search"},
             {"fill_placeholder": "Search…", "text": "invoice"},
+            {"wait_text": "Search results", "within": "main"},
             {"press_key": "ArrowDown"},
             {"scroll_text": "Search results"},
         ],
@@ -343,6 +345,7 @@ async def test_capture_forwards_interactions_and_keeps_native_evidence(capture):
     assert view["steps"] == [
         {"clickText": "Search"},
         {"fillPlaceholder": "Search…", "text": "invoice"},
+        {"waitText": "Search results", "within": "main"},
         {"pressKey": "ArrowDown"},
         {"scrollText": "Search results"},
     ]

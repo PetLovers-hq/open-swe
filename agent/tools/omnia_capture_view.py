@@ -44,7 +44,13 @@ class ScrollCaptureStep(CaptureScope):
     scroll_text: str
 
 
-CaptureStep = ClickCaptureStep | FillCaptureStep | KeyCaptureStep | ScrollCaptureStep
+class WaitCaptureStep(CaptureScope):
+    wait_text: str
+
+
+CaptureStep = (
+    ClickCaptureStep | FillCaptureStep | KeyCaptureStep | ScrollCaptureStep | WaitCaptureStep
+)
 
 
 def _capture_step(step: Any) -> dict[str, Any] | None:
@@ -55,6 +61,7 @@ def _capture_step(step: Any) -> dict[str, Any] | None:
         "fill_placeholder": "fillPlaceholder",
         "press_key": "pressKey",
         "scroll_text": "scrollText",
+        "wait_text": "waitText",
     }
     selected = [key for key in actions if key in step]
     if len(selected) != 1:
@@ -136,10 +143,15 @@ async def omnia_capture_view(
     wait for the new label, not the old label and new label together. steps click
     exact visible text (including emoji). Each step has exactly one action:
     {"click_text": "Search"}, {"fill_placeholder": "Search tasks…", "text": "invoice"},
-    {"press_key": "ArrowDown"}, or {"scroll_text": "Section heading"}.
+    {"press_key": "ArrowDown"}, {"scroll_text": "Section heading"}, or
+    {"wait_text": "Loaded result title"}.
     Fill uses an exact visible editable input/textarea placeholder; text="" clears it.
     Keyboard actions act on current focus, or one visible within CSS target.
     Scroll brings a unique visible text element into the screenshot area.
+    wait_text waits for rendered text before the NEXT action without changing focus
+    or scrolling. For async search, fill the query, wait_text for a result, then
+    press ArrowDown/Enter and wait_for_text for the destination's loaded content.
+    This readiness check does not replace inspecting the actual screenshot.
     These are real interactions: use disposable records for tests that save data.
     If a label exists in both a sidebar and a card, set within to the intended CSS
     container, e.g. main aside, based on repository markup. A failed view returns
@@ -173,7 +185,7 @@ async def omnia_capture_view(
     ):
         return {
             "success": False,
-            "error": "Provide at most ten steps, each with one click_text, fill_placeholder + text, press_key, or scroll_text action",
+            "error": "Provide at most ten steps, each with one click_text, fill_placeholder + text, press_key, scroll_text, or wait_text action",
         }
     config = get_config().get("configurable", {})
     repo = config.get("repo", {})
