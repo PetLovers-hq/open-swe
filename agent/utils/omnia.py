@@ -67,6 +67,7 @@ async def post_omnia_agent_action(payload: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "error": "Omnia agent tools are not configured"}
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    error: dict[str, Any] = {"success": False, "error": "Omnia tool transport failed"}
     for attempt in range(5):
         try:
             async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as client:
