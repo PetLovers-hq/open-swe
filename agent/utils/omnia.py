@@ -86,7 +86,7 @@ async def post_omnia_agent_action(payload: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(result, dict):
                 result = {"result": result}
             if response.is_success:
-                return {**result, "success": True}
+                return {"success": True, **result}
             error = {**result, "success": False}
             if response.status_code not in {408, 409, 429} and response.status_code < 500:
                 return error

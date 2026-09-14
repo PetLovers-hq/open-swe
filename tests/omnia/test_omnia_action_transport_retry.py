@@ -36,3 +36,15 @@ async def test_permission_failure_is_not_retried(monkeypatch):
     result = await post_omnia_agent_action({"idempotency_key": "fixed-key"})
     assert result == {"success": False, "error": "denied"}
     assert post.await_count == 1
+
+
+async def test_http_success_does_not_override_tool_failure(monkeypatch):
+    monkeypatch.setenv("OMNIA_TOOL_URL", "https://omnia.test/tool")
+    monkeypatch.setenv("OMNIA_TOOL_SECRET", "test-only")
+    post = AsyncMock(
+        return_value=httpx.Response(200, json={"success": False, "error": "action rejected"})
+    )
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    result = await post_omnia_agent_action({"idempotency_key": "fixed-key"})
+    assert result == {"success": False, "error": "action rejected"}
+    assert post.await_count == 1
