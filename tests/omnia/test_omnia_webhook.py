@@ -45,8 +45,34 @@ def _payload() -> dict[str, str]:
 
 
 @pytest.mark.asyncio
+async def test_approval_continues_stored_task_thread_without_domain_keywords(monkeypatch):
+    task_thread = "78a05069-7d0c-5ea7-8ccf-789a66d4114a"
+    dispatch = AsyncMock()
+    upsert = AsyncMock()
+    monkeypatch.setattr(omnia_routes, "dispatch_agent_run", dispatch)
+    monkeypatch.setattr(omnia_routes.common, "upsert_agent_thread_owner_metadata", upsert)
+    event = omnia_routes.OmniaDmEvent.model_validate(
+        _payload()
+        | {
+            "message": "Yes, I approve the desktop and phone screenshots. Please deploy it.",
+            "agent_thread_id": task_thread,
+        }
+    )
+
+    await omnia_routes.process_omnia_dm(event)
+
+    assert dispatch.await_args is not None
+    assert upsert.await_args is not None
+    assert dispatch.await_args.args[0] == task_thread
+    assert upsert.await_args.args[0] == task_thread
+    assert dispatch.await_args.args[2]["agent_model_id"] == "openai:gpt-5.6-luna"
+    assert dispatch.await_args.args[2]["agent_effort"] == "high"
+
+
+@pytest.mark.asyncio
 async def test_omnia_webhook_accepts_signed_event(monkeypatch: pytest.MonkeyPatch) -> None:
-    body = json.dumps(_payload()).encode()
+    task_thread = "78a05069-7d0c-5ea7-8ccf-789a66d4114a"
+    body = json.dumps(_payload() | {"agent_thread_id": task_thread}).encode()
     secret = "test-omnia-secret"
     signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     monkeypatch.setenv("OMNIA_WEBHOOK_SECRET", secret)
@@ -58,8 +84,26 @@ async def test_omnia_webhook_accepts_signed_event(monkeypatch: pytest.MonkeyPatc
     response = await omnia_routes.omnia_webhook(_request(body, signature), tasks)
 
     assert response["status"] == "accepted"
+    assert response["thread_id"] == task_thread
     assert len(tasks.tasks) == 1
     callback.assert_awaited_once()
+    assert callback.await_args is not None
+    assert callback.await_args.args[0]["agent_thread_id"] == task_thread
+
+
+@pytest.mark.asyncio
+async def test_omnia_webhook_rejects_malformed_task_identity(monkeypatch):
+    body = json.dumps(_payload() | {"agent_thread_id": "not-a-uuid"}).encode()
+    secret = "test-omnia-secret"
+    signature = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    monkeypatch.setenv("OMNIA_WEBHOOK_SECRET", secret)
+    tasks = BackgroundTasks()
+
+    with pytest.raises(HTTPException) as exc:
+        await omnia_routes.omnia_webhook(_request(body, signature), tasks)
+
+    assert exc.value.status_code == 422
+    assert not tasks.tasks
 
 
 @pytest.mark.asyncio
@@ -330,6 +374,40 @@ async def test_stop_bypasses_busy_queue_and_cancels_only_target_request(monkeypa
     assert callback.await_args.args[0]["terminal_status"] == "cancelled"
     assert callback.await_args.args[0]["cancelled_event_id"] == "old"
     assert callback.await_args.args[0]["journal_run_id"] == 9
+
+
+@pytest.mark.asyncio
+async def test_stop_uses_original_requests_stored_thread_instead_of_current_dm_thread(monkeypatch):
+    from types import SimpleNamespace
+
+    original_thread = "78a05069-7d0c-5ea7-8ccf-789a66d4114a"
+    current_thread = "c9cdeba5-bb10-57b0-bd70-a4617988caa8"
+    runs = SimpleNamespace(
+        list=AsyncMock(side_effect=[[{"run_id": "old-run", "metadata": {"event_id": "old"}}], []]),
+        cancel=AsyncMock(),
+    )
+    monkeypatch.setattr(omnia_routes, "dispatch_client", lambda: SimpleNamespace(runs=runs))
+    callback = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(omnia_routes, "post_omnia_dm_event", callback)
+    event = omnia_routes.OmniaDmEvent.model_validate(
+        _payload()
+        | {
+            "message": "Stop.",
+            "agent_thread_id": current_thread,
+            "stop_requested": True,
+            "stop_target": {
+                "event_id": "old",
+                "message": "Fix inventory",
+                "agent_thread_id": original_thread,
+            },
+        }
+    )
+
+    await omnia_routes.process_omnia_dm(event)
+
+    runs.cancel.assert_awaited_once_with(original_thread, "old-run", action="interrupt", wait=True)
+    assert callback.await_args is not None
+    assert callback.await_args.args[0]["agent_thread_id"] == original_thread
 
 
 @pytest.mark.asyncio

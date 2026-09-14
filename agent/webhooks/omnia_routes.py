@@ -22,11 +22,13 @@ _SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif",
 class OmniaStopTarget(BaseModel):
     event_id: str = Field(min_length=1, max_length=200)
     message: str = Field(min_length=1, max_length=100_000)
+    agent_thread_id: uuid.UUID | None = None
 
 
 class OmniaDmEvent(BaseModel):
     event_id: str = Field(min_length=1, max_length=200)
     dm_thread_id: str = Field(min_length=1, max_length=200)
+    agent_thread_id: uuid.UUID | None = None
     message: str = Field(min_length=1, max_length=100_000)
     sender_id: str = Field(min_length=1, max_length=200)
     sender_name: str | None = Field(default=None, max_length=200)
@@ -85,6 +87,16 @@ def _thread_id(dm_thread_id: str, message: str) -> str:
     return str(
         uuid.uuid5(uuid.NAMESPACE_URL, f"https://omnia.petlovers.com/dm/{dm_thread_id}{suffix}")
     )
+
+
+def _event_thread_id(event: OmniaDmEvent) -> str:
+    if event.stop_requested and event.stop_target is not None:
+        if event.stop_target.agent_thread_id is not None:
+            return str(event.stop_target.agent_thread_id)
+        return _thread_id(event.dm_thread_id, event.stop_target.message)
+    if event.agent_thread_id is not None:
+        return str(event.agent_thread_id)
+    return _thread_id(event.dm_thread_id, event.message)
 
 
 def _repo(event: OmniaDmEvent) -> dict[str, str]:
@@ -173,7 +185,7 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
             )
             raise
         return
-    thread_id = _thread_id(event.dm_thread_id, event.message)
+    thread_id = _event_thread_id(event)
     repo = _repo(event)
     model_id = "openai:gpt-5.6-luna"
     effort = "high"
@@ -229,7 +241,7 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
 async def stop_omnia_request(event: OmniaDmEvent) -> None:
     """A signed, user-authorized stop bypasses the model and its busy work queue."""
     target = event.stop_target
-    thread_id = _thread_id(event.dm_thread_id, target.message if target else event.message)
+    thread_id = _event_thread_id(event)
     if target:
         client = dispatch_client()
         run_ids: set[str] = set()
@@ -283,11 +295,11 @@ async def omnia_webhook(request: Request, background_tasks: BackgroundTasks) -> 
             "status": "accepted",
             "dm_thread_id": event.dm_thread_id,
             "event_id": event.event_id,
-            "agent_thread_id": _thread_id(event.dm_thread_id, event.message),
+            "agent_thread_id": _event_thread_id(event),
             "journal_run_id": event.journal_run_id,
         }
     )
-    return {"status": "accepted", "thread_id": _thread_id(event.dm_thread_id, event.message)}
+    return {"status": "accepted", "thread_id": _event_thread_id(event)}
 
 
 @router.get("/webhooks/omnia")
