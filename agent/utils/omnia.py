@@ -67,24 +67,32 @@ async def post_omnia_agent_action(payload: dict[str, Any]) -> dict[str, Any]:
         return {"success": False, "error": "Omnia agent tools are not configured"}
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    try:
-        async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                content=body,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Omnia-Signature": f"sha256={signature}",
-                },
-            )
+    for attempt in range(5):
         try:
-            result = response.json()
-        except ValueError:
-            result = {"error": f"Omnia tool returned HTTP {response.status_code}"}
-        if not isinstance(result, dict):
-            result = {"result": result}
-        if not response.is_success:
-            return {"success": False, **result}
-        return {"success": True, **result}
-    except httpx.HTTPError as exc:
-        return {"success": False, "error": f"Omnia tool failed: {exc.__class__.__name__}"}
+            async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as client:
+                response = await client.post(
+                    url,
+                    content=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Omnia-Signature": f"sha256={signature}",
+                    },
+                )
+            try:
+                result = response.json()
+            except ValueError:
+                result = {"error": f"Omnia tool returned HTTP {response.status_code}"}
+            if not isinstance(result, dict):
+                result = {"result": result}
+            if response.is_success:
+                return {**result, "success": True}
+            error = {**result, "success": False}
+            if response.status_code not in {408, 409, 429} and response.status_code < 500:
+                return error
+        except httpx.HTTPError as exc:
+            error = {"success": False, "error": f"Omnia tool failed: {exc.__class__.__name__}"}
+        if attempt < 4:
+            # Same serialized body and idempotency key: a lost response must not
+            # create a second task or spend the approval on a second release.
+            await asyncio.sleep(0.5 * 2**attempt)
+    return error
