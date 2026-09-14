@@ -71,18 +71,41 @@ async def test_a_previous_turn_merge_cannot_end_new_work() -> None:
     assert await run(value) is None
 
 
-async def test_real_graph_stops_before_invoking_the_model() -> None:
+@pytest.mark.parametrize("queued", [False, True])
+async def test_real_graph_stops_before_invoking_the_model(queued: bool) -> None:
     from langchain.agents import create_agent
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
     model = FakeListChatModel(responses=["should not be invoked"])
     graph = create_agent(model=model, middleware=[OmniaReleaseHandoffMiddleware()])
+    result_receipt = receipt()
+    if queued:
+        del result_receipt["merged"]
+        result_receipt.update(release_accepted=True, approved_commit_sha="b" * 40)
     with patch.object(
         FakeListChatModel, "_call", side_effect=AssertionError("unexpected model call")
     ):
         result = await graph.ainvoke(
-            {"messages": [*state(receipt())["messages"]]},
+            {"messages": [*state(result_receipt)["messages"]]},
             config={"configurable": {"source": "omnia"}},
         )
     assert len(result["messages"]) == 3
     assert isinstance(result["messages"][-1], ToolMessage)
+
+
+async def test_ends_after_durable_acceptance_without_claiming_a_merge() -> None:
+    accepted = {
+        "success": True,
+        "release_accepted": True,
+        "approved_commit_sha": "b" * 40,
+        "task": {"number": 18},
+        "approval_note_id": 100,
+    }
+    assert await run(state(accepted)) == {"jump_to": "end"}
+    for override in [
+        {"approved_commit_sha": "invalid"},
+        {"release_accepted": False},
+        {"task": {"number": 19}},
+        {"success": False},
+    ]:
+        assert await run(state({**accepted, **override})) is None

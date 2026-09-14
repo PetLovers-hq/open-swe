@@ -21,7 +21,7 @@ async def omnia_agent_action(
 
     For an approved release, call merge_task even if GitHub already shows the
     task merged: it verifies the approved head and restores the live DM handoff.
-    A release needs no new post-deployment screenshot. Follow next_action.
+    A release needs no new post-deployment screenshot. A release_accepted receipt means Omnia durably owns retries and deployment; end this approval run and follow next_action.
 
     Use omnia_capture_view for preview screenshots. The legacy browser_session
     action returns a migration instruction and never exposes a one-use launcher.

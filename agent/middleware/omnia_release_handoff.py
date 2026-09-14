@@ -1,6 +1,7 @@
 """End the approval worker after Omnia accepts ownership of deployment."""
 
 import json
+import re
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
@@ -38,14 +39,19 @@ class OmniaReleaseHandoffMiddleware(AgentMiddleware):
             merged = result.get("merged")
             task = result.get("task")
             if (
-                isinstance(merged, dict)
-                and isinstance(merged.get("mergeSha"), str)
-                and len(merged["mergeSha"]) == 40
+                (
+                    isinstance(merged, dict)
+                    and isinstance(merged.get("mergeSha"), str)
+                    and re.fullmatch(r"[0-9a-fA-F]{40}", merged["mergeSha"])
+                    or result.get("release_accepted") is True
+                    and isinstance(result.get("approved_commit_sha"), str)
+                    and re.fullmatch(r"[0-9a-fA-F]{40}", result["approved_commit_sha"])
+                )
                 and isinstance(task, dict)
                 and task.get("number") == calls[message.tool_call_id].get("task_number")
                 and isinstance(result.get("approval_note_id"), int)
             ):
-                # The signed deployment callback owns the DM confirmation. No
+                # The durable release queue and signed deployment callback own the DM confirmation. No
                 # further model call, polling, screenshot, or blocker is needed.
                 return {"jump_to": "end"}
         return None
