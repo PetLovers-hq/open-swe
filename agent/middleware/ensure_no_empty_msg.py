@@ -9,7 +9,7 @@ from langgraph.runtime import Runtime
 from ..input_messages import message_sender_id
 from ..utils.dashboard_handoff import DASHBOARD_HANDOFF_SENDER_ID
 
-_DASHBOARD_SOURCE = "dashboard"
+_DIRECT_REPLY_SOURCES = {"dashboard", "desktop"}
 _OMNIA_SOURCE = "omnia"
 
 
@@ -79,7 +79,7 @@ def _last_human_is_dashboard_handoff(state: AgentState) -> bool:
     return False
 
 
-def _is_dashboard_source() -> bool:
+def _is_direct_reply_source() -> bool:
     try:
         config = get_config()
     except RuntimeError:
@@ -87,7 +87,7 @@ def _is_dashboard_source() -> bool:
     configurable = config.get("configurable", {})
     if not isinstance(configurable, dict):
         return False
-    return configurable.get("source") == _DASHBOARD_SOURCE
+    return configurable.get("source") in _DIRECT_REPLY_SOURCES
 
 
 def _is_omnia_source() -> bool:
@@ -155,7 +155,7 @@ def ensure_no_empty_msg(state: AgentState, runtime: Runtime) -> dict[str, Any] |
         if (
             check_if_model_messaged_user(messages_since_last_human)
             or check_if_confirming_completion(messages_since_last_human)
-            or _is_dashboard_source()
+            or _is_direct_reply_source()
             or _last_human_is_dashboard_handoff(state)
         ):
             return None

@@ -1,6 +1,7 @@
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from langchain.agents.middleware import AgentState
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 
@@ -280,7 +281,8 @@ class TestEnsureNoEmptyMsgNotify:
 
         assert result is None
 
-    def test_skips_confirming_completion_for_dashboard_source(self) -> None:
+    @pytest.mark.parametrize("source", ["dashboard", "desktop"])
+    def test_skips_confirming_completion_for_direct_reply_source(self, source: str) -> None:
         ai = AIMessage(content="Hi! How can I help?")
         state: AgentState[Any] = {
             "messages": [
@@ -291,7 +293,7 @@ class TestEnsureNoEmptyMsgNotify:
 
         with patch(
             "agent.middleware.ensure_no_empty_msg.get_config",
-            return_value={"configurable": {"source": "dashboard"}},
+            return_value={"configurable": {"source": source}},
         ):
             result = ensure_no_empty_msg.after_model(state, self._make_runtime())
 
