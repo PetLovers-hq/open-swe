@@ -26,10 +26,10 @@ async def read_omnia_run_usage(thread_id: str, run_id: str) -> dict[str, Any]:
             is_root=True,
             filter=_langsmith_metadata_filter("prepare_run_id", str(prepare_id)),
             select=["id", "end_time", "total_cost", "prompt_tokens", "completion_tokens"],
-            limit=1000,
+            limit=100,
         )
     ]
-    if not roots or len(roots) >= 1000 or any(trace.end_time is None for trace in roots):
+    if not roots or len(roots) >= 100 or any(trace.end_time is None for trace in roots):
         return {"status": "pending", "journal_run_id": journal_id}
     costs = [float(trace.total_cost) if trace.total_cost is not None else None for trace in roots]
     if any(cost is None or not math.isfinite(cost) or cost < 0 for cost in costs):

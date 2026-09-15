@@ -30,6 +30,7 @@ async def test_usage_is_per_run_and_preserves_missing_prices(monkeypatch):
 
     async def traces(**kwargs):
         assert kwargs["is_root"] is True
+        assert kwargs["limit"] <= 100  # The deployed LangSmith API rejects larger pages.
         assert "prepare-1" in kwargs["filter"]
         for row in rows:
             yield row
@@ -42,4 +43,9 @@ async def test_usage_is_per_run_and_preserves_missing_prices(monkeypatch):
     rows[0].total_cost = None
     result = await omnia_usage.read_omnia_run_usage("thread-1", "run-1")
     assert result["status"] == "unavailable"
+    assert "cost_usd" not in result
+    rows[0].total_cost = 1.25
+    rows.extend([rows[0]] * 99)
+    result = await omnia_usage.read_omnia_run_usage("thread-1", "run-1")
+    assert result["status"] == "pending"
     assert "cost_usd" not in result
