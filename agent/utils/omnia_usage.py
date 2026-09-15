@@ -10,7 +10,7 @@ from .tracing import AGENT_TRACING_PROJECT
 
 async def read_omnia_run_usage(thread_id: str, run_id: str) -> dict[str, Any]:
     run = await langgraph_client().runs.get(thread_id, run_id)
-    metadata = run.get("metadata", {})
+    metadata = run.get("metadata") or {}
     context = metadata.get("source_context", {}).get("omnia_thread", {})
     journal_id = context.get("journal_run_id")
     if metadata.get("source") != "omnia" or not isinstance(journal_id, int):
@@ -39,10 +39,14 @@ async def read_omnia_run_usage(thread_id: str, run_id: str) -> dict[str, Any]:
         "journal_run_id": journal_id,
         "runtime_run_id": run_id,
         "cost_usd": sum(cost for cost in costs if cost is not None),
-        "tokens_input": sum(trace.prompt_tokens for trace in roots)
+        "tokens_input": sum(
+            trace.prompt_tokens for trace in roots if trace.prompt_tokens is not None
+        )
         if all(trace.prompt_tokens is not None for trace in roots)
         else None,
-        "tokens_output": sum(trace.completion_tokens for trace in roots)
+        "tokens_output": sum(
+            trace.completion_tokens for trace in roots if trace.completion_tokens is not None
+        )
         if all(trace.completion_tokens is not None for trace in roots)
         else None,
         "source": "langsmith-run-roots",

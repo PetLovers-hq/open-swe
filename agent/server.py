@@ -1444,13 +1444,16 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         subagent_model_id = per_thread_model
         subagent_effort = per_thread_effort
 
-    # Kyle's charter lock applies after all profile/thread overrides, including retries.
+    # Only the signed Omnia selection can replace the charter default, including retries.
     omnia_model_locked = configurable.get("source") == "omnia" or bool(
         configurable.get("omnia_thread")
     )
     if omnia_model_locked:
-        model_id = subagent_model_id = title_model_id = "openai:gpt-5.6-luna"
-        profile_effort = subagent_effort = title_effort = "high"
+        from .utils.omnia_models import resolve_omnia_model
+
+        model_id, profile_effort = resolve_omnia_model(configurable, fable_enabled=fable_enabled)
+        subagent_model_id = title_model_id = model_id
+        subagent_effort = title_effort = profile_effort
         configurable["agent_model_id"] = model_id
         configurable["agent_effort"] = profile_effort
 

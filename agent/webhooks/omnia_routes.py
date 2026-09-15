@@ -13,6 +13,7 @@ from pydantic import AwareDatetime, BaseModel, Field
 
 from ..dispatch import dispatch_agent_run, dispatch_client
 from ..utils.omnia import post_omnia_dm_event, verify_omnia_signature
+from ..utils.omnia_models import OmniaModelSelection
 from . import common
 
 router = APIRouter()
@@ -40,6 +41,7 @@ class OmniaDmEvent(BaseModel):
     attachments: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     journal_run_id: int | None = Field(default=None, gt=0)
     deadline_at: AwareDatetime | None = None
+    model_selection: OmniaModelSelection | None = None
     stop_requested: bool = False
     stop_target: OmniaStopTarget | None = None
 
@@ -202,8 +204,8 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
         return
     thread_id = _event_thread_id(event)
     repo = _repo(event)
-    model_id = "openai:gpt-5.6-luna"
-    effort = "high"
+    selection = event.model_selection or OmniaModelSelection(model_id="openai:gpt-5.6-luna")
+    model_id, effort = selection.model_id, selection.effort
     content, model_id, effort = await _multimodal_content(event, model_id, effort)
     omnia_thread: dict[str, Any] = {
         "thread_id": event.dm_thread_id,
@@ -219,6 +221,7 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
         "omnia_thread": omnia_thread,
         "agent_model_id": model_id,
         "agent_effort": effort,
+        "omnia_model_selection": selection.model_dump(),
     }
     if event.deadline_at is not None:
         configurable["omnia_deadline_at"] = event.deadline_at.timestamp()
@@ -248,6 +251,7 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
             "repo": repo,
             "event_id": event.event_id,
             "omnia_scope": _scope_key(event.message),
+            "omnia_model_selection": selection.model_dump(),
         },
         # A new request in the same ownership lane waits behind the current
         # run. It must never interrupt and discard active work.
@@ -374,3 +378,23 @@ async def omnia_run_usage(request: Request) -> dict[str, Any]:
         return await read_omnia_run_usage(str(value.thread_id), str(value.run_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/webhooks/omnia/model-check")
+async def omnia_model_check(request: Request) -> dict[str, str]:
+    body = await request.body()
+    if not verify_omnia_signature(body, request.headers.get("X-Omnia-Signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    from ..dashboard.team_settings import get_team_fable_enabled
+    from ..utils.omnia_models import check_omnia_model_credentials, resolve_omnia_model
+
+    try:
+        selection = OmniaModelSelection.model_validate_json(body)
+        model_id, effort = resolve_omnia_model(
+            {"omnia_model_selection": selection.model_dump()},
+            fable_enabled=await get_team_fable_enabled(),
+        )
+        check_omnia_model_credentials(model_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "ready", "model_id": model_id, "effort": effort}
