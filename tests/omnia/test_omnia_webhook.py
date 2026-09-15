@@ -432,3 +432,33 @@ async def test_stop_failure_does_not_claim_success(monkeypatch):
         await omnia_routes.process_omnia_dm(event)
     assert callback.await_args is not None
     assert callback.await_args.args[0]["terminal_status"] == "error"
+
+
+async def test_cancels_all_pending_and_running_work_on_only_the_signed_task_thread(monkeypatch):
+    monkeypatch.setenv("OMNIA_WEBHOOK_SECRET", "secret")
+    thread = "78a05069-7d0c-5ea7-8ccf-789a66d4114a"
+    client = AsyncMock()
+    client.runs.list.side_effect = [[{"run_id": "queued"}], [{"run_id": "running"}]]
+    monkeypatch.setattr(omnia_routes, "dispatch_client", lambda: client)
+    body = json.dumps({"agent_thread_id": thread, "dm_thread_id": "dm-kyle-luna"}).encode()
+    signature = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+    assert await omnia_routes.cancel_omnia_task(_request(body, signature)) == {"stopped": True}
+    assert client.runs.cancel.await_count == 2
+    client.runs.cancel.assert_any_await(thread, "queued", action="interrupt", wait=True)
+    client.runs.cancel.assert_any_await(thread, "running", action="interrupt", wait=True)
+    with pytest.raises(HTTPException) as error:
+        await omnia_routes.cancel_omnia_task(_request(body, "bad"))
+    assert error.value.status_code == 401
+
+
+async def test_expired_dispatch_does_not_start_a_model_or_sandbox(monkeypatch):
+    dispatch = AsyncMock()
+    callback = AsyncMock(return_value=(True, None))
+    monkeypatch.setattr(omnia_routes, "dispatch_agent_run", dispatch)
+    monkeypatch.setattr(omnia_routes, "post_omnia_dm_event", callback)
+    event = omnia_routes.OmniaDmEvent.model_validate(
+        _payload() | {"deadline_at": "2020-01-01T00:00:00Z"}
+    )
+    await omnia_routes.process_omnia_dm(event)
+    dispatch.assert_not_awaited()
+    assert callback.await_args.args[0]["terminal_status"] == "timeout"

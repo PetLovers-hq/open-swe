@@ -19,6 +19,23 @@ class OmniaReleaseHandoffMiddleware(AgentMiddleware):
         if configurable.get("source") != "omnia":
             return None
         messages = get_every_message_since_last_human(state)
+        review_calls = {
+            call["id"]
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in message.tool_calls
+            if call.get("name") == "omnia_dm_reply"
+            and call.get("args", {}).get("completion") is True
+        }
+        for message in reversed(messages):
+            if not isinstance(message, ToolMessage) or message.tool_call_id not in review_calls:
+                continue
+            try:
+                receipt = json.loads(message.content) if isinstance(message.content, str) else None
+            except (ValueError, TypeError):
+                continue
+            if isinstance(receipt, dict) and receipt.get("success") is True:
+                return {"jump_to": "end"}
         calls = {
             call["id"]: call.get("args", {})
             for message in messages
