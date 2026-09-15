@@ -109,3 +109,24 @@ async def test_ends_after_durable_acceptance_without_claiming_a_merge() -> None:
         {"success": False},
     ]:
         assert await run(state({**accepted, **override})) is None
+
+
+@pytest.mark.parametrize("success", [True, False])
+async def test_review_wait_ends_only_after_the_server_accepts_screenshot_delivery(success):
+    value = {
+        "messages": [
+            HumanMessage(content="Fix the screen"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "omnia_dm_reply", "args": {"completion": True}, "id": "review"}
+                ],
+            ),
+            ToolMessage(
+                content=json.dumps({"success": success}),
+                tool_call_id="review",
+                name="omnia_dm_reply",
+            ),
+        ]
+    }
+    assert await run(value) == ({"jump_to": "end"} if success else None)

@@ -112,6 +112,7 @@ from .middleware import (
     task_retry_on,
 )
 from .middleware.omnia_release_handoff import OmniaReleaseHandoffMiddleware
+from .middleware.omnia_task_budget import OmniaTaskBudgetMiddleware, remaining_task_seconds
 from .middleware.prepare_run import PrepareRunState
 from .middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
 from .prompt import construct_sender_context, construct_system_prompt, render_open_swe_shared_base
@@ -1322,6 +1323,8 @@ async def get_agent(config: RunnableConfig) -> Pregel:
             tools=[],
         ).with_config(config)
 
+    remaining_task_seconds(configurable)
+
     async def reconnect_backend(
         _thread_id: str = thread_id,
         _configurable: dict[str, Any] = configurable,
@@ -1757,6 +1760,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
                 ),
                 *([] if local_run else [PullRequestCreationGuardMiddleware()]),
                 WorkflowPushGuardMiddleware(),
+                OmniaTaskBudgetMiddleware(),
                 OmniaReleaseHandoffMiddleware(),
                 refresh_github_proxy_before_model,
                 *([] if stop_summary_mode else [check_message_queue_before_model]),

@@ -2,13 +2,14 @@
 
 import os
 import re
+import time
 import uuid
 from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from langchain_core.messages.content import create_text_block
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from ..dispatch import dispatch_agent_run, dispatch_client
 from ..utils.omnia import post_omnia_dm_event, verify_omnia_signature
@@ -38,6 +39,7 @@ class OmniaDmEvent(BaseModel):
     repo_name: str | None = Field(default=None, max_length=100)
     attachments: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     journal_run_id: int | None = Field(default=None, gt=0)
+    deadline_at: AwareDatetime | None = None
     stop_requested: bool = False
     stop_target: OmniaStopTarget | None = None
 
@@ -185,6 +187,19 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
             )
             raise
         return
+    if event.deadline_at is not None and event.deadline_at.timestamp() <= time.time():
+        await post_omnia_dm_event(
+            {
+                "kind": "message",
+                "purpose": "progress",
+                "terminal_status": "timeout",
+                "message": "Luna exceeded the 25-minute task budget.",
+                "dm_thread_id": event.dm_thread_id,
+                "event_id": event.event_id,
+                "journal_run_id": event.journal_run_id,
+            }
+        )
+        return
     thread_id = _event_thread_id(event)
     repo = _repo(event)
     model_id = "openai:gpt-5.6-luna"
@@ -205,6 +220,8 @@ async def process_omnia_dm(event: OmniaDmEvent) -> None:
         "agent_model_id": model_id,
         "agent_effort": effort,
     }
+    if event.deadline_at is not None:
+        configurable["omnia_deadline_at"] = event.deadline_at.timestamp()
     if event.sender_email:
         configurable["user_email"] = event.sender_email
     if event.github_login:
@@ -305,3 +322,33 @@ async def omnia_webhook(request: Request, background_tasks: BackgroundTasks) -> 
 @router.get("/webhooks/omnia")
 async def omnia_webhook_health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class OmniaTaskCancellation(BaseModel):
+    agent_thread_id: uuid.UUID
+    dm_thread_id: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/webhooks/omnia/cancel")
+async def cancel_omnia_task(request: Request) -> dict[str, bool]:
+    body = await request.body()
+    if not verify_omnia_signature(body, request.headers.get("X-Omnia-Signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    try:
+        event = OmniaTaskCancellation.model_validate_json(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid task cancellation") from exc
+    client = dispatch_client()
+    thread_id = str(event.agent_thread_id)
+    run_ids: set[str] = set()
+    for status in ("pending", "running"):
+        offset = 0
+        while True:
+            runs = await client.runs.list(thread_id, status=status, limit=100, offset=offset)
+            run_ids.update(run["run_id"] for run in runs)
+            if len(runs) < 100:
+                break
+            offset += len(runs)
+    for run_id in sorted(run_ids):
+        await client.runs.cancel(thread_id, run_id, action="interrupt", wait=True)
+    return {"stopped": True}
