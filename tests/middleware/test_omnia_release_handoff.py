@@ -113,7 +113,7 @@ async def test_ends_after_durable_acceptance_without_claiming_a_merge() -> None:
 
 @pytest.mark.parametrize("success", [True, False])
 async def test_review_wait_ends_only_after_the_server_accepts_screenshot_delivery(success):
-    value = {
+    value: AgentState = {
         "messages": [
             HumanMessage(content="Fix the screen"),
             AIMessage(
