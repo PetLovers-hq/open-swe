@@ -352,3 +352,25 @@ async def cancel_omnia_task(request: Request) -> dict[str, bool]:
     for run_id in sorted(run_ids):
         await client.runs.cancel(thread_id, run_id, action="interrupt", wait=True)
     return {"stopped": True}
+
+
+class OmniaUsageRequest(BaseModel):
+    thread_id: uuid.UUID
+    run_id: uuid.UUID
+
+
+@router.post("/webhooks/omnia/usage")
+async def omnia_run_usage(request: Request) -> dict[str, Any]:
+    body = await request.body()
+    if not verify_omnia_signature(body, request.headers.get("X-Omnia-Signature")):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    try:
+        value = OmniaUsageRequest.model_validate_json(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid usage request") from exc
+    from ..utils.omnia_usage import read_omnia_run_usage
+
+    try:
+        return await read_omnia_run_usage(str(value.thread_id), str(value.run_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
