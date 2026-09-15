@@ -474,8 +474,10 @@ async def test_general_purpose_subagent_cannot_use_slack_tools() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("selection", [None, "openai:gpt-5.6-sol", "anthropic:claude-opus-5"])
 async def test_omnia_model_lock_overrides_stored_profile_and_fallback(
     monkeypatch: pytest.MonkeyPatch,
+    selection: str | None,
 ) -> None:
     config = _base_config()
     configurable = config.get("configurable")
@@ -487,6 +489,9 @@ async def test_omnia_model_lock_overrides_stored_profile_and_fallback(
             "agent_effort": "low",
         }
     )
+    if selection:
+        configurable["omnia_model_selection"] = {"model_id": selection, "effort": "high"}
+    expected_model = selection or "openai:gpt-5.6-luna"
     monkeypatch.setenv("LLM_FALLBACK_MODEL_ID", "openai:gpt-6-astra")
     with patch("agent.server._make_model_or_defer", return_value=MagicMock()) as make:
         captured = await _capture_create_deep_agent_kwargs(
@@ -494,11 +499,9 @@ async def test_omnia_model_lock_overrides_stored_profile_and_fallback(
             thread_settings={"model_id": "openai:gpt-6-astra", "effort": "low"},
         )
     assert make.call_count >= 3
-    assert all(call.args[0] == "openai:gpt-5.6-luna" for call in make.call_args_list)
-    assert all(
-        call.kwargs.get("reasoning", {}).get("effort") == "high" for call in make.call_args_list
-    )
-    assert configurable["agent_model_id"] == "openai:gpt-5.6-luna"
+    assert all(call.args[0] == expected_model for call in make.call_args_list)
+    assert configurable["agent_effort"] == "high"
+    assert configurable["agent_model_id"] == expected_model
     middleware = captured["middleware"]
     assert isinstance(middleware, list)
     assert not any(type(m).__name__ == "ModelFallbackMiddleware" for m in middleware)
