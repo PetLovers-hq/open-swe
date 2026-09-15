@@ -461,4 +461,5 @@ async def test_expired_dispatch_does_not_start_a_model_or_sandbox(monkeypatch):
     )
     await omnia_routes.process_omnia_dm(event)
     dispatch.assert_not_awaited()
+    assert callback.await_args is not None
     assert callback.await_args.args[0]["terminal_status"] == "timeout"
